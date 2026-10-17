@@ -23,6 +23,17 @@ var ErrCannotCancelDuringDeletion = errors.New("cannot cancel run while deletion
 // ErrRunAlreadyFinished is returned when attempting to modify a completed/failed/canceled run.
 var ErrRunAlreadyFinished = errors.New("run already finished")
 
+// ErrFilesystemModeChanged is returned when a run is confirmed after the instance's filesystem mode changed.
+var ErrFilesystemModeChanged = errors.New("filesystem access changed since the scan")
+
+// FilesystemModeChangedMessage is the user-facing text for ErrFilesystemModeChanged,
+// stored on the failed run and returned in the 409 body.
+const FilesystemModeChangedMessage = "Filesystem access for this instance changed since the scan. Run a new scan before deleting."
+
+// ScanModeChangedMessage is stored on a scan that failed because the
+// instance's filesystem mode changed while it ran.
+const ScanModeChangedMessage = "Filesystem access for this instance changed during the scan. Run a new scan."
+
 // RunStatus represents the status of an orphan scan run.
 type RunStatus string
 
@@ -56,13 +67,23 @@ const (
 
 // OrphanFile represents a file found during an orphan scan.
 type OrphanFile struct {
-	ID           int64
-	RunID        int64
-	Path         string
-	Size         int64
-	ModifiedAt   time.Time
-	Status       FileStatus
-	ErrorMessage string
+	ID             int64
+	RunID          int64
+	Path           string
+	Size           int64
+	ModifiedAt     time.Time
+	Status         FileStatus
+	ErrorMessage   string
+	IsAbandonedDir bool
+}
+
+// AbandonedDir is a visited directory. The candidate pass decides whether the
+// run can empty it without removing protected content.
+type AbandonedDir struct {
+	Path    string
+	ModTime time.Time
+	// directFiles counts observed files; the walker subtracts orphan children.
+	directFiles int
 }
 
 // Settings represents orphan scan settings for an instance.
@@ -77,6 +98,9 @@ type Settings struct {
 	MaxFilesPerRun      int
 	AutoCleanupEnabled  bool
 	AutoCleanupMaxFiles int
+	ScanDefaultSavePath bool
+	ScanCategoryPaths   bool
+	DeleteAbandonedDirs bool
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

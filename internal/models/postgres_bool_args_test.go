@@ -278,6 +278,10 @@ func TestArrIDCacheSetUsesIntegerNegativeArg(t *testing.T) {
 			tvdb_id INTEGER,
 			tvmaze_id INTEGER,
 			titles_json TEXT,
+			episode_map_season INTEGER,
+			episode_map_episode INTEGER,
+			episode_map_absolute INTEGER,
+			episode_map_known INTEGER NOT NULL DEFAULT 0,
 			is_negative INTEGER DEFAULT 0,
 			cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			expires_at TIMESTAMP NOT NULL,
@@ -298,11 +302,15 @@ func TestArrIDCacheSetUsesIntegerNegativeArg(t *testing.T) {
 	store := NewArrIDCacheStore(q)
 	err := store.Set(context.Background(), "title-hash", "movie", nil, nil, false, time.Hour)
 	require.NoError(t, err)
-	// 10 insert columns plus the now bound in the upsert's expired-row check (#2300).
-	require.Len(t, insertArgs, 11)
+	// 14 insert columns plus the now bound in the upsert's expired-row check (#2300).
+	require.Len(t, insertArgs, 15)
 
-	isNegativeArg, ok := insertArgs[8].(int)
-	require.Truef(t, ok, "expected int arg for is_negative, got %T", insertArgs[8])
+	mapKnownArg, ok := insertArgs[11].(int)
+	require.Truef(t, ok, "expected int arg for episode_map_known, got %T", insertArgs[11])
+	require.Equal(t, 0, mapKnownArg)
+
+	isNegativeArg, ok := insertArgs[12].(int)
+	require.Truef(t, ok, "expected int arg for is_negative, got %T", insertArgs[12])
 	require.Equal(t, 0, isNegativeArg)
 }
 
@@ -376,8 +384,6 @@ func TestCrossSeedUpsertSettingsUsesIntegerBooleanArgs(t *testing.T) {
 			id INTEGER PRIMARY KEY,
 			enabled INTEGER NOT NULL DEFAULT 0,
 			run_interval_minutes INTEGER NOT NULL DEFAULT 120,
-			start_paused INTEGER NOT NULL DEFAULT 1,
-			category TEXT,
 			target_instance_ids TEXT NOT NULL DEFAULT '[]',
 			target_indexer_ids TEXT NOT NULL DEFAULT '[]',
 			max_results_per_run INTEGER NOT NULL DEFAULT 50,
@@ -456,19 +462,19 @@ func TestCrossSeedUpsertSettingsUsesIntegerBooleanArgs(t *testing.T) {
 
 	stored, err := store.UpsertSettings(context.Background(), settings)
 	require.NoError(t, err)
-	require.Len(t, insertArgs, 54)
-	require.JSONEq(t, `[{"categories":["music","flac"],"contentType":"music"}]`, insertArgs[21].(string), "category_mapping_rules should keep its column position")
+	require.Len(t, insertArgs, 52)
+	require.JSONEq(t, `[{"categories":["music","flac"],"contentType":"music"}]`, insertArgs[19].(string), "category_mapping_rules should keep its column position")
 	require.Equal(t, settings.CategoryMappingRules, stored.CategoryMappingRules, "category_mapping_rules should survive the round trip")
-	require.Equal(t, 200, insertArgs[17], "auto_resume_max_download_mb should keep its column position")
-	require.Equal(t, 1, insertArgs[18], "pooled_partial_completion_enabled should round-trip as int 1")
+	require.Equal(t, 200, insertArgs[15], "auto_resume_max_download_mb should keep its column position")
+	require.Equal(t, 1, insertArgs[16], "pooled_partial_completion_enabled should round-trip as int 1")
 	require.Equal(t, 200, stored.AutoResumeMaxDownloadMB, "auto_resume_max_download_mb should survive the round trip")
 	require.True(t, stored.PooledPartialCompletionEnabled, "pooled_partial_completion_enabled should survive the round trip")
-	require.Equal(t, 1, insertArgs[37], "rescue_title_mismatches should round-trip as int 1")
+	require.Equal(t, 1, insertArgs[35], "rescue_title_mismatches should round-trip as int 1")
 	require.True(t, stored.RescueTitleMismatches, "rescue_title_mismatches should survive the round trip")
-	require.Equal(t, 1, insertArgs[44], "season_pack_automation_enabled should round-trip as int 1")
+	require.Equal(t, 1, insertArgs[42], "season_pack_automation_enabled should round-trip as int 1")
 	require.True(t, stored.SeasonPackAutomationEnabled, "season_pack_automation_enabled should survive the round trip")
 
-	boolIndexes := []int{1, 3, 16, 18, 19, 26, 27, 30, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 51}
+	boolIndexes := []int{1, 14, 16, 17, 24, 25, 28, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 49}
 	for _, idx := range boolIndexes {
 		_, ok := insertArgs[idx].(int)
 		require.Truef(t, ok, "expected int arg at index %d, got %T", idx, insertArgs[idx])
@@ -529,6 +535,9 @@ func TestOrphanScanReadsIntegerBooleanColumns(t *testing.T) {
 			max_files_per_run INTEGER NOT NULL DEFAULT 0,
 			auto_cleanup_enabled INTEGER NOT NULL DEFAULT 0,
 			auto_cleanup_max_files INTEGER NOT NULL DEFAULT 0,
+			scan_default_save_path INTEGER NOT NULL DEFAULT 0,
+			scan_category_paths INTEGER NOT NULL DEFAULT 0,
+			delete_abandoned_dirs INTEGER NOT NULL DEFAULT 0,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
@@ -545,6 +554,8 @@ func TestOrphanScanReadsIntegerBooleanColumns(t *testing.T) {
 			folders_deleted INTEGER NOT NULL DEFAULT 0,
 			bytes_reclaimed INTEGER NOT NULL DEFAULT 0,
 			truncated INTEGER NOT NULL DEFAULT 0,
+			partial INTEGER NOT NULL DEFAULT 0,
+			filesystem_mode TEXT NOT NULL DEFAULT 'local',
 			error_message TEXT,
 			started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			completed_at TIMESTAMP
@@ -552,26 +563,30 @@ func TestOrphanScanReadsIntegerBooleanColumns(t *testing.T) {
 	`)
 	mustExec(t, db, `
 		INSERT INTO orphan_scan_settings
-			(instance_id, enabled, grace_period_minutes, ignore_paths, scan_interval_hours, preview_sort, max_files_per_run, auto_cleanup_enabled, auto_cleanup_max_files)
+			(instance_id, enabled, grace_period_minutes, ignore_paths, scan_interval_hours, preview_sort, max_files_per_run, auto_cleanup_enabled, auto_cleanup_max_files, scan_default_save_path, scan_category_paths, delete_abandoned_dirs)
 		VALUES
-			(1, 1, 120, '[]', 24, 'modified_desc', 100, 1, 25)
+			(1, 1, 120, '[]', 24, 'modified_desc', 100, 1, 25, 1, 1, 1)
 	`)
 	mustExec(t, db, `
 		INSERT INTO orphan_scan_runs
-			(instance_id, status, triggered_by, scan_paths, files_found, files_deleted, folders_deleted, bytes_reclaimed, truncated)
+			(instance_id, status, triggered_by, scan_paths, files_found, files_deleted, folders_deleted, bytes_reclaimed, truncated, partial)
 		VALUES
-			(1, 'completed', 'manual', '[]', 10, 5, 1, 1024, 1)
+			(1, 'completed', 'manual', '[]', 10, 5, 1, 1024, 1, 1)
 	`)
 
 	store := NewOrphanScanStore(&capturingQuerier{db: db})
-	settings, err := store.GetSettings(context.Background(), 1)
+	settings, err := store.GetSettings(t.Context(), 1)
 	require.NoError(t, err)
 	require.True(t, settings.Enabled)
 	require.True(t, settings.AutoCleanupEnabled)
+	require.True(t, settings.ScanDefaultSavePath)
+	require.True(t, settings.ScanCategoryPaths)
+	require.True(t, settings.DeleteAbandonedDirs)
 
-	run, err := store.GetRun(context.Background(), 1)
+	run, err := store.GetRun(t.Context(), 1)
 	require.NoError(t, err)
 	require.True(t, run.Truncated)
+	require.True(t, run.Partial)
 }
 
 func TestDirScanReadsIntegerBooleanColumns(t *testing.T) {

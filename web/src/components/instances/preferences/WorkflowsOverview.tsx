@@ -37,9 +37,9 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { JsonEditor, preloadJsonEditor } from "@/components/ui/json-editor"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { TrackerIconImage } from "@/components/ui/tracker-icon"
 import { TruncatedText } from "@/components/ui/truncated-text"
@@ -52,6 +52,7 @@ import { api } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/dateTimeUtils"
 import { downloadBlob, toCsv, type CsvColumn } from "@/lib/csv-export"
 import { pickTrackerIconDomain } from "@/lib/tracker-icons"
+import { formatSpeedWithUnit } from "@/lib/speedUnits"
 import { cn, copyTextToClipboard, formatBytes, parseTrackerDomains } from "@/lib/utils"
 import {
   fromImportFormat,
@@ -79,13 +80,14 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query"
-import { ArrowDown, ArrowUp, Clock, Copy, CopyPlus, Download, Folder, GripVertical, Info, Loader2, MoreVertical, Move, Pause, Play, Pencil, Plus, RefreshCcw, Scale, Search, Send, Tag, Terminal, Trash2, Upload } from "lucide-react"
-import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react"
+import { ArrowDown, ArrowUp, Braces, Clock, Copy, CopyPlus, Download, Folder, GripVertical, Info, Loader2, MoreVertical, Move, Pause, Play, Pencil, Plus, RefreshCcw, Scale, Search, Send, Tag, Terminal, Trash2, Upload } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import i18n from "../../../i18n"
 import { toast } from "sonner"
 import { AutomationActivityRunDialog } from "./AutomationActivityRunDialog"
 import { WorkflowDialog } from "./WorkflowDialog"
+import { WorkflowJsonEditDialog } from "./WorkflowJsonEditDialog"
 import { WorkflowPreviewDialog } from "./WorkflowPreviewDialog"
 
 /**
@@ -333,6 +335,11 @@ export function WorkflowsOverview({
   // the matching react-query keys; this replaces the idle activity polling.
   useActivityStream()
 
+  // Warm the JSON editor chunk so the Import and Edit dialogs rarely show the textarea fallback.
+  useEffect(() => {
+    void preloadJsonEditor()
+  }, [])
+
   const reorderSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -357,6 +364,7 @@ export function WorkflowsOverview({
     rule: Automation
     preview: AutomationPreviewResult | null
     isInitialLoading: boolean
+    error?: string
   } | null>(null)
   const [previewView, setPreviewView] = useState<PreviewView>("needed")
   const [isLoadingPreviewView, setIsLoadingPreviewView] = useState(false)
@@ -401,6 +409,8 @@ export function WorkflowsOverview({
       void queryClient.invalidateQueries({ queryKey: ["automations", instanceId] })
     },
   })
+
+  const [jsonEdit, setJsonEdit] = useState<Automation | null>(null)
 
   // Import dialog state
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -477,7 +487,6 @@ export function WorkflowsOverview({
       const payload = {
         name: rule.name,
         trackerPattern: rule.trackerPattern,
-        trackerDomains: rule.trackerDomains ?? parseTrackerDomains(rule),
         conditions: rule.conditions,
         freeSpaceSource: rule.freeSpaceSource,
         enabled: true,
@@ -514,12 +523,14 @@ export function WorkflowsOverview({
         throw error
       }
     },
-    onSuccess: (preview) => {
-      setEnableConfirm(prev => prev ? { ...prev, preview, isInitialLoading: false } : prev)
+    // A cancelled dialog does not cancel the request, so only apply a result to the rule it was started for.
+    onSuccess: (preview, { instanceId, rule }) => {
+      setEnableConfirm(prev => prev?.instanceId === instanceId && prev.rule.id === rule.id ? { ...prev, preview, isInitialLoading: false } : prev)
     },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : "Failed to preview rule")
-      setEnableConfirm(null)
+    onError: (error, { instanceId, rule }) => {
+      // Keep the dialog open: the user can still enable the rule without a preview.
+      const message = error instanceof Error ? error.message : t("preferences.workflowsOverview.toast.previewFailed")
+      setEnableConfirm(prev => prev?.instanceId === instanceId && prev.rule.id === rule.id ? { ...prev, isInitialLoading: false, error: message } : prev)
     },
   })
 
@@ -618,8 +629,8 @@ export function WorkflowsOverview({
     if (!importInstanceId) return
 
     const result = parseImportJSON(importJSON)
-    if (result.error || !result.data) {
-      setImportError(result.error ?? t("preferences.workflowsOverview.importDialog.invalidImportData"))
+    if (result.data === null) {
+      setImportError(t(result.error))
       return
     }
 
@@ -1012,6 +1023,7 @@ export function WorkflowsOverview({
                                     onRunDryRun={() => dryRunRule.mutate({ instanceId: instance.id, rule })}
                                     onDuplicate={() => handleDuplicate(instance.id, rule)}
                                     onCopyToInstance={(targetId) => handleCopyToInstance(rule, targetId)}
+                                    onEditJson={() => setJsonEdit(rule)}
                                     onExport={() => handleExport(rule)}
                                     disableDrag={sortedRules.length < 2 || reorderRules.isPending}
                                   />
@@ -1438,13 +1450,9 @@ export function WorkflowsOverview({
                                                 const [type, limitKiB] = key.split(":")
                                                 const numKiB = Number(limitKiB)
                                                 // 0 = Unlimited in qBittorrent per-torrent speed limits
-                                                let label: string
-                                                if (numKiB === 0) {
-                                                  label = t("preferences.workflowsOverview.unlimited")
-                                                } else {
-                                                  const limitMiB = numKiB / 1024
-                                                  label = limitMiB >= 1 ? `${limitMiB} MiB/s` : `${limitKiB} KiB/s`
-                                                }
+                                                const label = numKiB === 0
+                                                  ? t("preferences.workflowsOverview.unlimited")
+                                                  : formatSpeedWithUnit(numKiB * 1024, "bytes")
                                                 return (
                                                   <Badge key={key} variant="outline" className="text-[10px] px-1.5 py-0 h-5 bg-sky-500/10 text-sky-500 border-sky-500/20">
                                                     {type === "upload" ? "↑" : "↓"} {label} ({count})
@@ -1612,6 +1620,7 @@ export function WorkflowsOverview({
         preview={enableConfirm?.preview ?? null}
         condition={enableConfirm ? (enableConfirm.rule.conditions?.delete?.condition ?? enableConfirm.rule.conditions?.category?.condition) : null}
         onConfirm={confirmEnableRule}
+        previewError={enableConfirm?.error ?? null}
         onLoadMore={handleLoadMorePreview}
         isLoadingMore={loadMorePreview.isPending}
         confirmLabel={t("preferences.workflowsOverview.enableRule")}
@@ -1627,8 +1636,12 @@ export function WorkflowsOverview({
         isInitialLoading={enableConfirm?.isInitialLoading ?? false}
       />
 
+      {jsonEdit && (
+        <WorkflowJsonEditDialog rule={jsonEdit} onOpenChange={(open) => !open && setJsonEdit(null)} />
+      )}
+
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogContent className="md:max-w-4xl max-h-[85dvh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{t("preferences.workflowsOverview.importDialog.title")}</DialogTitle>
             <DialogDescription>
@@ -1636,17 +1649,17 @@ export function WorkflowsOverview({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 overflow-y-auto flex-1 min-h-0">
-            <Textarea
+            <JsonEditor
+              aria-label={t("preferences.workflowsOverview.importDialog.title")}
               placeholder={t("preferences.workflowsOverview.importDialog.placeholder")}
               value={importJSON}
-              onChange={(e) => {
-                setImportJSON(e.target.value)
+              onChange={(value) => {
+                setImportJSON(value)
                 setImportError(null)
               }}
-              className="min-h-[200px] max-h-[50vh] font-mono text-sm"
             />
             {importError && (
-              <p className="text-sm text-destructive">{importError}</p>
+              <p className="text-sm text-destructive whitespace-pre-line">{importError}</p>
             )}
           </div>
           <DialogFooter>
@@ -1687,6 +1700,7 @@ interface RulePreviewProps {
   onRunDryRun: () => void
   onDuplicate: () => void
   onCopyToInstance: (targetInstanceId: number) => void
+  onEditJson: () => void
   onExport: () => void
 }
 
@@ -1704,6 +1718,7 @@ function SortableRulePreview({
   onRunDryRun,
   onDuplicate,
   onCopyToInstance,
+  onEditJson,
   onExport,
   disableDrag,
 }: SortableRulePreviewProps) {
@@ -1738,6 +1753,7 @@ function SortableRulePreview({
         onRunDryRun={onRunDryRun}
         onDuplicate={onDuplicate}
         onCopyToInstance={onCopyToInstance}
+        onEditJson={onEditJson}
         onExport={onExport}
         dragHandle={(
           <Button
@@ -1773,6 +1789,7 @@ function RulePreview({
   onRunDryRun,
   onDuplicate,
   onCopyToInstance,
+  onEditJson,
   onExport,
 }: RulePreviewProps) {
   const { t } = useTranslation("instances")
@@ -1898,7 +1915,7 @@ function RulePreview({
         {rule.conditions?.category?.enabled && (
           <Badge variant="outline" className="text-[10px] px-1.5 h-5 gap-0.5 cursor-default text-emerald-600 border-emerald-600/50">
             <Folder className="h-3 w-3" />
-            {rule.conditions.category.category}
+            {rule.conditions.category.category || t("preferences.workflowDialog.uncategorized")}
           </Badge>
         )}
         {rule.conditions?.move?.enabled && (
@@ -1952,6 +1969,10 @@ function RulePreview({
                 </DropdownMenuSubContent>
               </DropdownMenuSub>
             )}
+            <DropdownMenuItem onClick={onEditJson}>
+              <Braces className="h-4 w-4 mr-2" />
+              {t("preferences.workflowsOverview.editJSON")}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={onExport}>
               <Download className="h-4 w-4 mr-2" />
               {t("preferences.workflowsOverview.exportJSON")}

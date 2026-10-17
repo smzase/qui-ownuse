@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch"
 import { useInstances } from "@/hooks/useInstances"
 import { useIncognitoMode } from "@/lib/incognito"
 import { DEFAULT_REANNOUNCE_SETTINGS, instanceUrlSchema } from "@/lib/instance-validation"
-import { formatErrorMessage } from "@/lib/utils"
+import { formatErrorMessage } from "@/lib/format-error-message"
 import type { Instance, InstanceFormData } from "@/types"
 import { useForm } from "@tanstack/react-form"
 import { useEffect, useRef, useState } from "react"
@@ -22,7 +22,6 @@ import { PreferencesFormShell } from "./PreferencesFormShell"
 
 interface InstanceSettingsPanelProps {
   instance: Instance
-  onSuccess?: () => void
 }
 
 type InstanceAuthType = "none" | "usernamePassword" | "apiKey"
@@ -34,7 +33,7 @@ function getInstanceAuthType(instance: Instance): InstanceAuthType {
   return instance.username ? "usernamePassword" : "none"
 }
 
-export function InstanceSettingsPanel({ instance, onSuccess }: InstanceSettingsPanelProps) {
+export function InstanceSettingsPanel({ instance }: InstanceSettingsPanelProps) {
   const { t } = useTranslation("instances")
   const { updateInstance, isUpdating } = useInstances()
   const [incognitoMode] = useIncognitoMode()
@@ -61,7 +60,6 @@ export function InstanceSettingsPanel({ instance, onSuccess }: InstanceSettingsP
 
     if (showBasicAuth && !isTransmission) {
       if (data.basicPassword === "<redacted>") {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { basicPassword, ...dataWithoutPassword } = data
         submitData = dataWithoutPassword
       } else {
@@ -89,7 +87,6 @@ export function InstanceSettingsPanel({ instance, onSuccess }: InstanceSettingsP
       }
       if (submitData.password === "") {
         // Omit empty password to preserve existing credentials
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { password, ...rest } = submitData
         submitData = rest
       }
@@ -102,7 +99,6 @@ export function InstanceSettingsPanel({ instance, onSuccess }: InstanceSettingsP
 
       if (submitData.apiKey === "<redacted>") {
         // Omit redacted placeholder to preserve existing API key
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { apiKey, ...rest } = submitData
         submitData = rest
       }
@@ -113,7 +109,6 @@ export function InstanceSettingsPanel({ instance, onSuccess }: InstanceSettingsP
         toast.success(t("preferences.settingsPanel.toast.updatedTitle"), {
           description: t("preferences.settingsPanel.toast.updatedDescription"),
         })
-        onSuccess?.()
       },
       onError: (error) => {
         toast.error(t("preferences.settingsPanel.toast.updateFailedTitle"), {

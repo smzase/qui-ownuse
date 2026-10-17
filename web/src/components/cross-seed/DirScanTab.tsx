@@ -635,7 +635,7 @@ function RunRow({
                           )}
                         </TableCell>
                         <TableCell>{formatTrackerName(inj)}</TableCell>
-                        <TableCell>{t(`dirScan.contentTypeLabels.${inj.contentType}`, inj.contentType)}</TableCell>
+                        <TableCell>{t(`common:contentTypeLabels.${inj.contentType}`, inj.contentType)}</TableCell>
                         <TableCell>{inj.linkMode ? t(`dirScan.linkModeLabels.${inj.linkMode}`, inj.linkMode) : "-"}</TableCell>
                         <TableCell>
                           <Tooltip>
@@ -835,6 +835,7 @@ function buildSettingsFormState(settings: SettingsDialogProps["settings"]) {
 
 function SettingsDialog({ open, onOpenChange, settings, instances }: SettingsDialogProps) {
   const { t } = useTranslation("crossseed")
+  const { formatDate } = useDateTimeFormatters()
   const updateSettings = useUpdateDirScanSettings()
   const [form, setForm] = useState(() => buildSettingsFormState(settings))
 
@@ -850,14 +851,14 @@ function SettingsDialog({ open, onOpenChange, settings, instances }: SettingsDia
 
   const metadataQueries = useQueries({
     queries: instanceIds.map((instanceId) => ({
-      queryKey: ["instance-metadata", instanceId],
+      // Not the shared instance-metadata key: an entry without preferences there would hide them from useInstancePreferences.
+      queryKey: ["dir-scan-instance-metadata", instanceId],
       queryFn: async () => {
-        const [categories, tags, preferences] = await Promise.all([
+        const [categories, tags] = await Promise.all([
           api.getCategories(instanceId),
           api.getTags(instanceId),
-          api.getInstancePreferences(instanceId),
         ])
-        return { categories, tags, preferences }
+        return { categories, tags }
       },
       staleTime: 60_000,
       gcTime: 1_800_000,
@@ -923,8 +924,8 @@ function SettingsDialog({ open, onOpenChange, settings, instances }: SettingsDia
     }
     const days = Math.max(1, form.maxSearcheeAgeDays)
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-    return cutoff.toLocaleString()
-  }, [ageFilterEnabled, form.maxSearcheeAgeDays])
+    return formatDate(cutoff)
+  }, [ageFilterEnabled, form.maxSearcheeAgeDays, formatDate])
 
   const handleSave = useCallback(() => {
     updateSettings.mutate(form, {

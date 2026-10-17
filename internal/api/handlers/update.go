@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -19,15 +18,15 @@ const uploadedBinaryFormMemory = 32 << 20
 type binaryInstaller interface {
 	IsSupported() bool
 	Install(source io.Reader) error
-	Restart() error
 }
 
 type UpdateHandler struct {
 	installer binaryInstaller
+	restarter restartRequester
 }
 
-func NewUpdateHandler(installer binaryInstaller) *UpdateHandler {
-	return &UpdateHandler{installer: installer}
+func NewUpdateHandler(installer binaryInstaller, restarter restartRequester) *UpdateHandler {
+	return &UpdateHandler{installer: installer, restarter: restarter}
 }
 
 type UploadUpdateResponse struct {
@@ -39,6 +38,17 @@ func (h *UpdateHandler) UploadBinary(w http.ResponseWriter, r *http.Request) {
 		RespondError(w, http.StatusConflict, "Uploading updates is only supported by standalone Linux installations")
 		return
 	}
+
+	if !h.restarter.TryLock() {
+		RespondError(w, http.StatusConflict, "An update or restart is already running")
+		return
+	}
+	restarting := false
+	defer func() {
+		if !restarting {
+			h.restarter.Unlock()
+		}
+	}()
 
 	r.Body = http.MaxBytesReader(w, r.Body, update.MaxUploadedBinarySize)
 	if err := r.ParseMultipartForm(uploadedBinaryFormMemory); err != nil { //nolint:gosec // G120: the request body is bounded by http.MaxBytesReader before parsing; memory is bounded and the rest spools to disk
@@ -74,15 +84,12 @@ func (h *UpdateHandler) UploadBinary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	RespondJSON(w, http.StatusAccepted, UploadUpdateResponse{Restarting: true})
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
+	if err := h.restarter.Request(); err != nil {
+		log.Error().Err(err).Msg("Failed to restart after installing uploaded binary update")
+		RespondError(w, http.StatusInternalServerError, "Update installed, but restart failed; restart qui manually")
+		return
 	}
-
-	go func() {
-		time.Sleep(time.Second)
-		if err := h.installer.Restart(); err != nil {
-			log.Error().Err(err).Msg("Failed to restart after installing uploaded binary update")
-		}
-	}()
+	restarting = true
+	// The serve loop waits for this response before replacing the process.
+	RespondJSON(w, http.StatusAccepted, UploadUpdateResponse{Restarting: true})
 }

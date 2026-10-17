@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -17,11 +18,12 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/autobrr/autobrr/pkg/ttlcache"
+	"github.com/autobrr/go-cache/ttlcache"
 	qbt "github.com/autobrr/go-qbittorrent"
 	"github.com/avast/retry-go"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/autobrr/qui/internal/transmission"
 )
@@ -39,6 +41,7 @@ var (
 	renameFolderMinVersion               = semver.MustParse("2.7.0")
 	subcategoriesMinVersion              = semver.MustParse("2.9.0")
 	subcategoriesAlwaysEnabledMinVersion = semver.MustParse("2.15.0")
+	categorySavePathNestingMinVersion    = semver.MustParse("2.10.0") // qBittorrent 5.0; 4.6.x is 2.9.x
 	torrentTmpPathMinVersion             = semver.MustParse("2.8.4")
 	pathAutocompleteMinVersion           = semver.MustParse("2.11.2")
 	rssSetFeedURLMinVersion              = semver.MustParse("2.9.1")
@@ -66,6 +69,14 @@ func splitHostUserinfo(host string) (cleanHost, user, pass string) {
 // fetch failure against a real qBittorrent.
 var errInvalidWebAPIVersion = errors.New("invalid qBittorrent WebAPI version")
 
+const peerSyncIdleTimeout = 5 * time.Minute
+
+type peerSyncEntry struct {
+	manager  *qbt.PeerSyncManager
+	lastUsed time.Time
+	timer    *time.Timer
+}
+
 type Client struct {
 	*qbt.Client
 	instanceID                 int
@@ -81,6 +92,7 @@ type Client struct {
 	supportsFilePriority       bool
 	supportsSubcategories      bool
 	subcategoriesAlwaysEnabled bool
+	nestsCategorySavePaths     bool
 	supportsTorrentTmpPath     bool
 	supportsPathAutocomplete   bool
 	trackerIncludeSupported    bool
@@ -90,7 +102,7 @@ type Client struct {
 	lastHealthCheck            time.Time
 	isHealthy                  bool
 	syncManager                *qbt.SyncManager
-	peerSyncManager            map[string]*qbt.PeerSyncManager // Map of torrent hash to PeerSyncManager
+	peerSyncManager            map[string]*peerSyncEntry
 	// optimisticUpdates stores temporary optimistic state changes for this instance
 	optimisticUpdates    *ttlcache.Cache[string, *OptimisticTorrentUpdate]
 	trackerExclusions    map[string]map[string]struct{} // Domains to hide hashes from until fresh sync arrives
@@ -101,6 +113,8 @@ type Client struct {
 	serverStateMu        sync.RWMutex
 	healthMu             sync.RWMutex
 	appInfoMu            sync.RWMutex
+	appInfoGroup         singleflight.Group
+	peerSyncGroup        singleflight.Group
 	preferencesCache     *qbt.AppPreferences
 	preferencesJSON      json.RawMessage
 	preferencesFetchedAt time.Time
@@ -236,10 +250,10 @@ func initClient(ctx context.Context, qbtClient *qbt.Client, bridge *transmission
 		transmissionBridge: bridge,
 		lastHealthCheck:    time.Now(),
 		isHealthy:          true,
-		optimisticUpdates: ttlcache.New(ttlcache.Options[string, *OptimisticTorrentUpdate]{}.
-			SetDefaultTTL(30 * time.Second)), // Updates expire after 30 seconds
+		optimisticUpdates: ttlcache.New[string, *OptimisticTorrentUpdate](
+			ttlcache.SetDefaultTTL(30 * time.Second)), // Updates expire after 30 seconds
 		trackerExclusions: make(map[string]map[string]struct{}),
-		peerSyncManager:   make(map[string]*qbt.PeerSyncManager),
+		peerSyncManager:   make(map[string]*peerSyncEntry),
 		completionState:   make(map[string]bool),
 		addedState:        make(map[string]struct{}),
 	}
@@ -262,12 +276,12 @@ func initClient(ctx context.Context, qbtClient *qbt.Client, bridge *transmission
 		client.updateHealthStatus(true)
 	}
 
-	// Initialize sync manager with default options
 	syncOpts := qbt.DefaultSyncOptions()
 	syncOpts.DynamicSync = true
 
 	// Set up health check callbacks
 	syncOpts.OnUpdate = func(data *qbt.MainData) {
+		client.prunePeerSyncManagers(data)
 		client.countsGen.Add(1)
 		client.updateHealthStatus(true)
 		client.updateServerState(data)
@@ -281,6 +295,8 @@ func initClient(ctx context.Context, qbtClient *qbt.Client, bridge *transmission
 	syncOpts.OnError = client.handleSyncManagerError
 
 	client.syncManager = qbtClient.NewSyncManager(syncOpts)
+	// The tracker manager did not exist during the capability refresh above.
+	client.syncManager.Trackers().SetUseIncludeTrackers(client.supportsTrackerInclude())
 
 	log.Debug().
 		Int("instanceID", instanceID).
@@ -525,6 +541,7 @@ func (c *Client) applyCapabilitiesLocked(version string) {
 	c.supportsRenameFolder = !v.LessThan(renameFolderMinVersion)
 	c.supportsSubcategories = !v.LessThan(subcategoriesMinVersion)
 	c.subcategoriesAlwaysEnabled = !v.LessThan(subcategoriesAlwaysEnabledMinVersion)
+	c.nestsCategorySavePaths = !v.LessThan(categorySavePathNestingMinVersion)
 	c.supportsTorrentTmpPath = !v.LessThan(torrentTmpPathMinVersion)
 	c.supportsPathAutocomplete = !v.LessThan(pathAutocompleteMinVersion)
 	c.supportsSetRSSFeedURL = !v.LessThan(rssSetFeedURLMinVersion)
@@ -591,36 +608,6 @@ func (c *Client) GetCachedServerState() *qbt.ServerState {
 	return &stateCopy
 }
 
-// UpdateWithPeersData triggers a sync on the peer manager to keep it warm after intercepting peer data
-// This ensures our local peer state stays synchronized with the proxy client's view
-func (c *Client) UpdateWithPeersData(hash string, data *qbt.TorrentPeersResponse) {
-	// Get or create the peer sync manager for this torrent
-	peerSync := c.GetOrCreatePeerSyncManager(hash)
-
-	// Trigger a background sync to refresh the peer state
-	// We can't directly inject the data, but we can trigger a sync to keep the cache warm
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := peerSync.Sync(ctx); err != nil {
-			log.Error().
-				Err(err).
-				Int("instanceID", c.instanceID).
-				Str("hash", hash).
-				Msg("Failed to sync peer manager after intercepted peer data")
-			return
-		}
-
-		log.Debug().
-			Int("instanceID", c.instanceID).
-			Str("hash", hash).
-			Int("peerCount", len(data.Peers)).
-			Int64("rid", data.Rid).
-			Msg("Updated peer state with fresh data from intercepted request")
-	}()
-}
-
 func (c *Client) SupportsRenameTorrent() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -657,6 +644,15 @@ func (c *Client) SubcategoriesAlwaysEnabled() bool {
 	return c.subcategoriesAlwaysEnabled
 }
 
+// NestsCategorySavePaths reports whether this qBittorrent version can resolve an
+// empty category save path under the parent category. qBittorrent 4.6 shows
+// subcategories but always saves to the default save path plus the full name.
+func (c *Client) NestsCategorySavePaths() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nestsCategorySavePaths
+}
+
 func (c *Client) SupportsTorrentTmpPath() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -680,7 +676,8 @@ func (c *Client) getTorrentsByHashes(hashes []string) []qbt.Torrent {
 }
 
 func (c *Client) HealthCheck(ctx context.Context) error {
-	if c.IsHealthy() && time.Now().Add(-minHealthCheckInterval).Before(c.GetLastHealthCheck()) {
+	// Empty version means capabilities never loaded; sync updates stamp health, so keep probing.
+	if c.GetWebAPIVersion() != "" && c.IsHealthy() && time.Since(c.GetLastHealthCheck()) < minHealthCheckInterval {
 		return nil
 	}
 
@@ -770,6 +767,19 @@ func (c *Client) hydrateTorrentsWithTrackers(ctx context.Context, torrents []qbt
 	return enriched, trackerData, nil, nil
 }
 
+// refreshTrackers fetches tracker data for every torrent in one request, bypassing
+// the tracker cache. A torrent that the fetch does not return keeps no tracker data:
+// cached MainData can still hold a torrent that qBittorrent already deleted, and
+// that torrent must not block every pass.
+func (c *Client) refreshTrackers(ctx context.Context, torrents []qbt.Torrent) ([]qbt.Torrent, error) {
+	tm := c.trackerManager()
+	if tm == nil {
+		return torrents, errors.New("tracker manager unavailable")
+	}
+	torrents, _, err := tm.Refresh(ctx, torrents)
+	return torrents, err
+}
+
 func (c *Client) invalidateTrackerCache(hashes ...string) {
 	if tm := c.trackerManager(); tm != nil {
 		tm.Invalidate(hashes...)
@@ -848,9 +858,7 @@ func (c *Client) handleCompletionUpdates(data *qbt.MainData) {
 
 	handler := c.completionHandler
 
-	for _, removed := range data.TorrentsRemoved {
-		delete(c.completionState, normalizeHashForCompletion(removed))
-	}
+	pruneRemovedTorrents(c.completionState, data.Torrents)
 
 	if !c.completionInit {
 		if len(data.Torrents) == 0 {
@@ -858,7 +866,6 @@ func (c *Client) handleCompletionUpdates(data *qbt.MainData) {
 			return
 		}
 		for hash, torrent := range data.Torrents {
-			normalized := normalizeHashForCompletion(hash)
 			// Mirror the steady-state trust model: while checking/moving or
 			// stopped, byte counts can be verification fractions, so a
 			// completed torrent observed there must baseline on the stamp
@@ -867,9 +874,9 @@ func (c *Client) handleCompletionUpdates(data *qbt.MainData) {
 			// re-downloading after a failed recheck keeps its stamp but must
 			// not baseline as complete, or its real completion never fires.
 			if isCheckingState(torrent.State) || isStoppedOrErrorState(torrent.State) {
-				c.completionState[normalized] = hasCompletionStamp(&torrent)
+				c.completionState[hash] = hasCompletionStamp(&torrent)
 			} else {
-				c.completionState[normalized] = isTorrentComplete(&torrent)
+				c.completionState[hash] = isTorrentComplete(&torrent)
 			}
 		}
 		c.completionInit = true
@@ -891,12 +898,11 @@ func (c *Client) handleCompletionUpdates(data *qbt.MainData) {
 			// may mark a torrent handled but never un-mark one.
 			continue
 		}
-		normalized := normalizeHashForCompletion(hash)
-		alreadyHandled := c.completionState[normalized]
+		alreadyHandled := c.completionState[hash]
 		// Track current completeness rather than latching: if qbit knocks a
 		// completed torrent back to downloading (failed recheck-on-completion),
 		// this re-arms so the eventual real completion fires again.
-		c.completionState[normalized] = isComplete
+		c.completionState[hash] = isComplete
 
 		if !alreadyHandled && isComplete {
 			ready = append(ready, torrent)
@@ -914,8 +920,13 @@ func (c *Client) handleCompletionUpdates(data *qbt.MainData) {
 	}
 }
 
-func normalizeHashForCompletion(hash string) string {
-	return strings.ToUpper(strings.TrimSpace(hash))
+// pruneRemovedTorrents drops hashes missing from the merged torrent map.
+// go-qbittorrent never forwards TorrentsRemoved to OnUpdate.
+func pruneRemovedTorrents[V any](state map[string]V, torrents map[string]qbt.Torrent) {
+	maps.DeleteFunc(state, func(hash string, _ V) bool {
+		_, exists := torrents[hash]
+		return !exists
+	})
 }
 
 func (c *Client) handleAddedUpdates(data *qbt.MainData) {
@@ -930,9 +941,7 @@ func (c *Client) handleAddedUpdates(data *qbt.MainData) {
 
 	handler := c.addedHandler
 
-	for _, removed := range data.TorrentsRemoved {
-		delete(c.addedState, normalizeHashForCompletion(removed))
-	}
+	pruneRemovedTorrents(c.addedState, data.Torrents)
 
 	if !c.addedInit {
 		if len(data.Torrents) == 0 {
@@ -940,7 +949,7 @@ func (c *Client) handleAddedUpdates(data *qbt.MainData) {
 			return
 		}
 		for hash := range data.Torrents {
-			c.addedState[normalizeHashForCompletion(hash)] = struct{}{}
+			c.addedState[hash] = struct{}{}
 		}
 		c.addedInit = true
 		c.addedMu.Unlock()
@@ -949,11 +958,10 @@ func (c *Client) handleAddedUpdates(data *qbt.MainData) {
 
 	ready := make([]qbt.Torrent, 0)
 	for hash, torrent := range data.Torrents {
-		normalized := normalizeHashForCompletion(hash)
-		if _, ok := c.addedState[normalized]; ok {
+		if _, ok := c.addedState[hash]; ok {
 			continue
 		}
-		c.addedState[normalized] = struct{}{}
+		c.addedState[hash] = struct{}{}
 		ready = append(ready, torrent)
 	}
 	c.addedMu.Unlock()
@@ -1031,23 +1039,87 @@ func isStoppedOrErrorState(state qbt.TorrentState) bool {
 		state == qbt.TorrentStateError
 }
 
+// peerSyncFetchTimeout bounds a peer fetch that outlives the reader which started it.
+const peerSyncFetchTimeout = 30 * time.Second
+
+// SyncPeers fetches peer updates for a torrent, merges them and returns the merged
+// list. Readers of the same hash share one fetch, so the rid a request carries is
+// always the rid the previous merge produced: an older snapshot can no longer land
+// on top of a newer one and restore a peer the server already removed.
+// Callers must not mutate the returned response, it is shared by every reader that
+// joined the same fetch.
+func (c *Client) SyncPeers(ctx context.Context, hash string) (*qbt.TorrentPeersResponse, error) {
+	// The manager is keyed on the lowered hash, so the fetch must be too:
+	// otherwise two spellings of one hash share a manager but not a fetch.
+	hash = strings.ToLower(hash)
+	peerSync := c.GetOrCreatePeerSyncManager(hash)
+
+	// Joiners share the leader's result, so the fetch must not die with the
+	// leader's context; peerSyncFetchTimeout still bounds it. DoChan lets a
+	// caller whose own request went away leave without waiting for the fetch.
+	ch := c.peerSyncGroup.DoChan(hash, func() (any, error) {
+		fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), peerSyncFetchTimeout)
+		defer cancel()
+
+		if err := peerSync.Sync(fetchCtx); err != nil {
+			return nil, err
+		}
+		return peerSync.GetPeers(), nil
+	})
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-ch:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return result.Val.(*qbt.TorrentPeersResponse), nil
+	}
+}
+
 // GetOrCreatePeerSyncManager gets or creates a PeerSyncManager for a specific torrent
 func (c *Client) GetOrCreatePeerSyncManager(hash string) *qbt.PeerSyncManager {
+	hash = strings.ToLower(hash)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Check if we already have a sync manager for this torrent
-	if peerSync, exists := c.peerSyncManager[hash]; exists {
-		return peerSync
+	if entry, exists := c.peerSyncManager[hash]; exists {
+		entry.lastUsed = time.Now()
+		entry.timer.Reset(peerSyncIdleTimeout)
+		return entry.manager
 	}
 
-	// Create a new peer sync manager for this torrent
 	peerSyncOpts := qbt.DefaultPeerSyncOptions()
 	peerSyncOpts.AutoSync = false // We'll sync manually when requested
-	peerSync := c.NewPeerSyncManager(hash, peerSyncOpts)
-	c.peerSyncManager[hash] = peerSync
+	entry := &peerSyncEntry{
+		manager:  c.NewPeerSyncManager(hash, peerSyncOpts),
+		lastUsed: time.Now(),
+	}
+	entry.timer = time.AfterFunc(peerSyncIdleTimeout, func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		// A callback queued before Reset must not remove a renewed or replaced entry.
+		if c.peerSyncManager[hash] == entry && time.Since(entry.lastUsed) >= peerSyncIdleTimeout {
+			delete(c.peerSyncManager, hash)
+		}
+	})
+	c.peerSyncManager[hash] = entry
 
-	return peerSync
+	return entry.manager
+}
+
+func (c *Client) prunePeerSyncManagers(data *qbt.MainData) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// OnUpdate supplies the complete merged torrent map, including after a delta.
+	maps.DeleteFunc(c.peerSyncManager, func(hash string, entry *peerSyncEntry) bool {
+		if _, exists := data.Torrents[hash]; exists {
+			return false
+		}
+		entry.timer.Stop()
+		return true
+	})
 }
 
 // applyOptimisticCacheUpdate applies optimistic updates for the given hashes and action
@@ -1178,13 +1250,7 @@ func (c *Client) clearTrackerExclusions(domains []string) {
 
 // getOptimisticUpdates returns all current optimistic updates
 func (c *Client) getOptimisticUpdates() map[string]*OptimisticTorrentUpdate {
-	updates := make(map[string]*OptimisticTorrentUpdate)
-	for _, key := range c.optimisticUpdates.GetKeys() {
-		if val, found := c.optimisticUpdates.Get(key); found {
-			updates[key] = val
-		}
-	}
-	return updates
+	return maps.Collect(c.optimisticUpdates.All())
 }
 
 // clearOptimisticUpdate removes an optimistic update for a specific torrent

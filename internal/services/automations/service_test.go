@@ -363,7 +363,7 @@ func TestActionConditionsUseField_IgnoresDisabledActions(t *testing.T) {
 	require.False(t, actionConditionsUseField(ac, FieldHasMissingFiles))
 }
 
-func TestRulesUseTrackerEntryData(t *testing.T) {
+func TestNeedsForTrackerEntries(t *testing.T) {
 	deleteRule := func(cond *models.RuleCondition) *models.Automation {
 		return &models.Automation{
 			Enabled: true,
@@ -401,7 +401,69 @@ func TestRulesUseTrackerEntryData(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, rulesUseTrackerEntryData(tt.rules))
+			require.Equal(t, tt.want, NeedsFor(tt.rules).TrackerEntries)
+		})
+	}
+}
+
+func TestNeedsForTrackerNames(t *testing.T) {
+	rule := func(ac *models.ActionConditions) *models.Automation {
+		return &models.Automation{Enabled: true, Conditions: ac}
+	}
+
+	tests := []struct {
+		name string
+		rule *models.Automation
+		want bool
+	}{
+		{
+			name: "display-name tag action",
+			rule: rule(&models.ActionConditions{Tag: &models.TagAction{Enabled: true, UseTrackerAsTag: true, UseDisplayName: true}}),
+			want: true,
+		},
+		{
+			name: "move path uses Tracker",
+			rule: rule(&models.ActionConditions{Move: &models.MoveAction{Enabled: true, Path: "/data/{{.Tracker}}"}}),
+			want: true,
+		},
+		{
+			name: "export save path uses Tracker",
+			rule: rule(&models.ActionConditions{ExportToInstance: &models.ExportToInstanceAction{Enabled: true, SavePath: "/data/{{ .Tracker }}/{{ .IsolationFolderName }}"}}),
+			want: true,
+		},
+		{
+			name: "move path uses index Tracker",
+			rule: rule(&models.ActionConditions{Move: &models.MoveAction{Enabled: true, Path: `/data/{{ index . "Tracker" }}`}}),
+			want: true,
+		},
+		{
+			name: "disabled move path uses Tracker",
+			rule: rule(&models.ActionConditions{Move: &models.MoveAction{Path: "/data/{{.Tracker}}"}}),
+			want: false,
+		},
+		{
+			name: "disabled export save path uses Tracker",
+			rule: rule(&models.ActionConditions{ExportToInstance: &models.ExportToInstanceAction{SavePath: "/data/{{.Tracker}}"}}),
+			want: false,
+		},
+		{
+			name: "paths without Tracker",
+			rule: rule(&models.ActionConditions{
+				Move:             &models.MoveAction{Enabled: true, Path: "/data/{{.Category}}"},
+				ExportToInstance: &models.ExportToInstanceAction{Enabled: true, SavePath: "/data/{{.IsolationFolderName}}"},
+			}),
+			want: false,
+		},
+		{
+			name: "disabled rule",
+			rule: &models.Automation{Conditions: &models.ActionConditions{Move: &models.MoveAction{Enabled: true, Path: "/data/{{.Tracker}}"}}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, NeedsFor([]*models.Automation{tt.rule}).TrackerNames)
 		})
 	}
 }
@@ -1153,67 +1215,6 @@ func TestCategoryConditionNotMet(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// isContentPathAmbiguous tests
-// -----------------------------------------------------------------------------
-
-func TestIsContentPathAmbiguous(t *testing.T) {
-	tests := []struct {
-		scenario    string
-		contentPath string
-		savePath    string
-		want        bool
-	}{
-		{
-			scenario:    "ContentPath != SavePath => unambiguous",
-			contentPath: "/downloads/torrent/My.Movie.2024",
-			savePath:    "/downloads/torrent",
-			want:        false,
-		},
-		{
-			scenario:    "ContentPath == SavePath => ambiguous (shared dir)",
-			contentPath: "/downloads/shared",
-			savePath:    "/downloads/shared",
-			want:        true,
-		},
-		{
-			scenario:    "ContentPath subfolder of SavePath => unambiguous",
-			contentPath: "/Downloads/torrent/My.Movie",
-			savePath:    "/downloads/torrent",
-			want:        false,
-		},
-		{
-			scenario:    "ContentPath == SavePath (case-insensitive) => ambiguous",
-			contentPath: "/Downloads/Shared",
-			savePath:    "/downloads/shared",
-			want:        true,
-		},
-		{
-			scenario:    "ContentPath == SavePath (trailing slash diff) => ambiguous",
-			contentPath: "/downloads/shared/",
-			savePath:    "/downloads/shared",
-			want:        true,
-		},
-		{
-			scenario:    "ContentPath is specific file/folder under SavePath => unambiguous",
-			contentPath: "/downloads/movies/MyMovie",
-			savePath:    "/downloads/movies",
-			want:        false,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.scenario, func(t *testing.T) {
-			torrent := qbt.Torrent{
-				ContentPath: tc.contentPath,
-				SavePath:    tc.savePath,
-			}
-			got := isContentPathAmbiguous(torrent)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
-// -----------------------------------------------------------------------------
 // crossSeedGroupMembers tests
 // -----------------------------------------------------------------------------
 
@@ -1930,30 +1931,6 @@ func TestUpdateCumulativeFreeSpaceCleared_NeededView(t *testing.T) {
 
 	updateCumulativeFreeSpaceCleared(allTorrents[2], evalCtx, DeleteModeWithFiles, cpIndex)
 	assert.Equal(t, int64(180*1024*1024*1024), evalCtx.SpaceToClear)
-}
-
-func TestUpdateCumulativeFreeSpaceCleared_EligibleView(t *testing.T) {
-	// Test that "eligible" mode does NOT update cumulative space tracking
-	// (simulated by not calling updateCumulativeFreeSpaceCleared)
-	// This is the expected behavior in eligible mode - we skip the update
-	allTorrents := []qbt.Torrent{
-		{Hash: "a", Size: 100 * 1024 * 1024 * 1024, ContentPath: "/data/movie1"}, // 100 GB
-		{Hash: "b", Size: 50 * 1024 * 1024 * 1024, ContentPath: "/data/movie2"},  // 50 GB
-	}
-
-	evalCtx := &EvalContext{
-		SpaceToClear: 0,
-	}
-
-	// In "eligible" mode, we don't call updateCumulativeFreeSpaceCleared
-	// SpaceToClear should remain 0, so all torrents continue to match FREE_SPACE conditions
-
-	// Verify SpaceToClear stays at 0 when we don't update it
-	assert.Equal(t, int64(0), evalCtx.SpaceToClear)
-
-	// In eligible mode the condition would continue matching all torrents
-	// because SpaceToClear is never incremented
-	_ = allTorrents // Used in actual preview logic
 }
 
 func TestPreviewViewBehavior_CrossSeedExpansion(t *testing.T) {

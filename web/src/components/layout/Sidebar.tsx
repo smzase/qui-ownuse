@@ -27,6 +27,7 @@ import { useTheme } from "@/hooks/useTheme"
 import { changeLanguage, languageNames, supportedLanguages } from "@/i18n"
 import { api } from "@/lib/api"
 import { getAppVersion } from "@/lib/build-info"
+import { demoLinks, isDemo } from "@/lib/demo"
 import { normalizeUnifiedInstanceIds } from "@/lib/instances"
 import { cn } from "@/lib/utils"
 import { useQuery } from "@tanstack/react-query"
@@ -301,18 +302,26 @@ export function Sidebar() {
 
   const appVersion = getAppVersion()
 
+  const brand = (
+    <span className="flex items-center gap-2">
+      {theme === "swizzin" ? (
+        <SwizzinLogo className="h-5 w-5" />
+      ) : theme === "napster" ? (
+        <NapsterLogo className="h-5 w-5" />
+      ) : (
+        <Logo className="h-5 w-5" />
+      )}
+      qui
+    </span>
+  )
+
   return (
     <div className="flex h-full w-64 flex-col border-r bg-sidebar border-sidebar-border">
       <div className="flex items-center justify-between p-6">
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-sidebar-foreground">
-          {theme === "swizzin" ? (
-            <SwizzinLogo className="h-5 w-5" />
-          ) : theme === "napster" ? (
-            <NapsterLogo className="h-5 w-5" />
-          ) : (
-            <Logo className="h-5 w-5" />
-          )}
-          qui
+        <h2 className="flex items-center text-lg font-semibold text-sidebar-foreground">
+          {isDemo ? (
+            <a href="/" target="_top" className="flex items-center gap-2 hover:opacity-80">{brand}</a>
+          ) : brand}
         </h2>
         <Dialog open={customizerOpen} onOpenChange={setCustomizerOpen}>
           <Tooltip>
@@ -374,7 +383,7 @@ export function Sidebar() {
 
       <nav className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3">
         <div className="space-y-1">
-          {visibleNavigation.map((item) => {
+          {!isDemo && visibleNavigation.map((item) => {
             const Icon = item.icon
             const isActive = item.isActive? item.isActive(location.pathname, routeSearch): location.pathname === item.href
 
@@ -394,6 +403,17 @@ export function Sidebar() {
               </Link>
             )
           })}
+          {isDemo && demoLinks.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              target="_top"
+              className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-all duration-200 ease-out hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <link.icon className="h-4 w-4" />
+              {t(link.labelKey)}
+            </a>
+          ))}
         </div>
 
         <Separator className="my-4" />
@@ -433,14 +453,16 @@ export function Sidebar() {
         <div className="mt-auto space-y-3 pt-3">
           <UpdateBanner />
 
-          <Button
-            variant="ghost"
-            className="w-full justify-start"
-            onClick={() => logout()}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            {t("sidebar.logout")}
-          </Button>
+          {!isDemo && (
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              onClick={() => logout()}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {t("sidebar.logout")}
+            </Button>
+          )}
         </div>
       </nav>
 

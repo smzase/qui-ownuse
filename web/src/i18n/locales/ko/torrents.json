@@ -15,7 +15,7 @@
     }
   },
   "managementBar": {
-    "ariaLabel": "토렌트 {{count}}개 선택됨 - 일괄 작업 사용 가능",
+    "ariaLabel_other": "토렌트 {{count}}개 선택됨 - 일괄 작업 사용 가능",
     "resume": "재개",
     "pause": "일시 정지",
     "forceRecheck": "강제 재확인",
@@ -484,7 +484,6 @@
     "renameFolder": "폴더 이름 바꾸기",
     "download": "다운로드",
     "mediaInfo": "MediaInfo",
-    "toggle": "전환",
     "selectFileForDownload": "다운로드할 파일 선택",
     "skipFileDownload": "파일 다운로드 건너뛰기",
     "selectAllFilesIn": "{{name}}의 모든 파일 선택",
@@ -505,6 +504,31 @@
     "toast": {
       "copied": "{{label}}이(가) 클립보드에 복사되었습니다",
       "copyFailed": "클립보드에 복사하지 못했습니다"
+    }
+  },
+  "discScan": {
+    "action": "BDInfo",
+    "actionActive": "BDInfo 스캔 진행 중",
+    "actionReady": "BDInfo 보고서 준비됨",
+    "actionFailed": "BDInfo 스캔 실패",
+    "quickSummary": "빠른 요약",
+    "forum": "포럼",
+    "copyQuickSummary": "빠른 요약 복사",
+    "copyForum": "포럼 블록 복사",
+    "rescan": "다시 스캔",
+    "cancel": "스캔 취소",
+    "retry": "다시 시도",
+    "starting": "스캔 시작 중...",
+    "queued": "대기 중, 순서 {{position}}",
+    "scanning": "{{total}} 중 {{processed}} 스캔 중",
+    "scanningUnknown": "스캔 중...",
+    "failed": "스캔 실패",
+    "canceled": "스캔 취소됨",
+    "toast": {
+      "copied": "{{label}}을(를) 클립보드에 복사했습니다",
+      "copyFailed": "클립보드에 복사하지 못했습니다",
+      "completed": "BDInfo 보고서가 준비되었습니다",
+      "failed": "BDInfo 스캔 실패: {{error}}"
     }
   },
   "categoryTree": {
@@ -607,22 +631,22 @@
     "deleteEmptyCategories": {
       "title": "빈 카테고리 제거",
       "noEmpty": "제거할 빈 카테고리가 없습니다.",
-      "confirm": "빈 카테고리 {{count}}개를 제거하시겠습니까? 이 작업은 취소할 수 없습니다.",
+      "confirm_other": "빈 카테고리 {{count}}개를 제거하시겠습니까? 이 작업은 취소할 수 없습니다.",
       "cancel": "취소",
-      "remove": "카테고리 {{count}}개 제거",
+      "remove_other": "카테고리 {{count}}개 제거",
       "toast": {
-        "success": "빈 카테고리 {{count}}개를 제거했습니다",
+        "success_other": "빈 카테고리 {{count}}개를 제거했습니다",
         "error": "빈 카테고리를 제거하지 못했습니다"
       }
     },
     "deleteUnusedTags": {
       "title": "사용하지 않는 태그 삭제",
       "noUnused": "삭제할 사용하지 않는 태그가 없습니다.",
-      "confirm": "사용하지 않는 태그 {{count}}개를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
+      "confirm_other": "사용하지 않는 태그 {{count}}개를 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
       "cancel": "취소",
-      "delete": "태그 {{count}}개 삭제",
+      "delete_other": "태그 {{count}}개 삭제",
       "toast": {
-        "success": "사용하지 않는 태그 {{count}}개를 삭제했습니다",
+        "success_other": "사용하지 않는 태그 {{count}}개를 삭제했습니다",
         "error": "사용하지 않는 태그를 삭제하지 못했습니다"
       }
     }
@@ -648,7 +672,7 @@
     "contentFilteringInProgress": "콘텐츠 필터링 진행 중",
     "analyzingContent": "기존 콘텐츠 분석 중...",
     "smartFilteringActive": "스마트 필터링 활성",
-    "indexersFiltered": "인덱서 {{count}}개 필터링됨",
+    "indexersFiltered_other": "인덱서 {{count}}개 필터링됨",
     "contentFilteringDescription": "기존 토렌트를 확인하여 중복을 찾고 불필요한 트래커를 제외합니다. 이를 통해 동일한 콘텐츠를 여러 번 다운로드하는 것을 방지합니다.",
     "excludedDescription": "이 트래커에서 이미 이 릴리스를 시드 중이므로 검색에서 제외됩니다.",
     "noContentDuplicates": "콘텐츠 필터링이 완료되었습니다. 활성화된 트래커에서 중복 콘텐츠를 찾지 못했습니다.",
@@ -740,6 +764,26 @@
     "setConditions": "이 열을 필터링할 조건을 설정하세요",
     "operation": "연산",
     "selectOperation": "연산 선택",
+    "operations": {
+      "equalTo": "같음",
+      "notEqualTo": "같지 않음",
+      "greaterThan": "초과",
+      "greaterThanOrEqual": "이상",
+      "lessThan": "미만",
+      "lessThanOrEqual": "이하",
+      "between": "범위",
+      "equals": "같음",
+      "notEquals": "같지 않음",
+      "contains": "포함",
+      "doesNotContain": "포함하지 않음",
+      "startsWith": "다음으로 시작",
+      "endsWith": "다음으로 끝남",
+      "on": "해당 날짜",
+      "after": "이후",
+      "before": "이전",
+      "is": "일치",
+      "isNot": "불일치"
+    },
     "value": "값",
     "from": "시작",
     "to": "끝",
@@ -808,7 +852,10 @@
       }
     },
     "title": "필터",
-    "clearAll": "모두 지우기",
+    "clearOptions": "필터 지우기 옵션",
+    "clearSidebarFilters": "사이드바 필터 지우기",
+    "clearColumnFilters": "열 필터 지우기",
+    "clearFiltersAndSearch": "필터 및 검색 지우기",
     "loading": "불러오는 중...",
     "customFilter": "사용자 지정 필터",
     "customFilterHelp": "활성 사용자 지정 표현식 필터(예: cross-seed 결과)",
@@ -828,18 +875,15 @@
     "uncategorized": "분류 없음",
     "tags": "태그",
     "trackers": "트래커",
-    "customExpression": "사용자 지정 표현식",
     "untagged": "태그 없음",
     "noTracker": "트래커 없음",
     "hideEmpty": "빈 항목 숨기기",
     "showEmpty": "빈 항목 표시",
-    "showHidden": "숨겨진 {{count}}개 표시",
     "searchCategories": "카테고리 검색",
     "searchTags": "태그 검색",
     "searchTrackers": "트래커 검색",
     "noCategoriesFound": "\"{{query}}\"와 일치하는 카테고리를 찾을 수 없습니다",
     "noTagsFound": "\"{{query}}\"와 일치하는 태그를 찾을 수 없습니다",
-    "hiddenMatchSearch": "숨겨진 {{count}}개가 검색과 일치",
     "createTag": "태그 생성",
     "createCategory": "카테고리 생성",
     "createSubcategory": "하위 카테고리 생성",
@@ -891,7 +935,6 @@
     "zoomIn": "확대",
     "zoomOut": "축소",
     "zoomReset": "확대/축소 초기화",
-    "zoomLevel": "{{level}}%",
     "externalIpAddresses": "외부 IP 주소",
     "selected": "{{count}}개 선택됨",
     "allSelected": "모두 선택됨",
@@ -925,7 +968,6 @@
     "connectionPort": "포트: {{port}}",
     "connectionAriaLabel": "qBittorrent 연결 상태: {{status}}",
     "connectionAriaLabelUnknown": "qBittorrent 연결 상태 알 수 없음",
-    "external": "외부",
     "streamStatus": {
       "crossInstance": {
         "label": "인스턴스 간 폴링",
@@ -955,7 +997,8 @@
         "message": "SSE 연결이 준비될 때까지 {{seconds}}초 폴링을 사용합니다.",
         "secondary": "{{seconds}}초마다 폴링"
       }
-    }
+    },
+    "dualStack": "IPv4 & IPv6"
   },
   "detailsPanel": {
     "tabs": {
@@ -978,10 +1021,8 @@
       "trackerUpdated": "트래커 URL이 업데이트되었습니다",
       "trackerUpdateFailed": "트래커를 업데이트하지 못했습니다",
       "fileRenamed": "파일 이름이 변경되었습니다",
-      "fileRenameFailed": "파일 이름을 변경하지 못했습니다",
       "folderRenamed": "폴더 이름이 변경되었습니다",
-      "folderRenameFailed": "폴더 이름을 변경하지 못했습니다",
-      "deletedTorrents": "토렌트 {{count}}개를 삭제했습니다",
+      "deletedTorrents_other": "토렌트 {{count}}개를 삭제했습니다",
       "deletedTorrent": "토렌트를 삭제했습니다: {{name}}",
       "deleteFailed": "삭제하지 못했습니다: {{error}}"
     },
@@ -990,10 +1031,6 @@
       "description": "피어 주소(IP:port)를 한 줄에 하나씩 또는 쉼표로 구분하여 입력하세요",
       "label": "피어",
       "placeholder": "192.168.1.100:51413\n10.0.0.5:6881\ntracker.example.com:8080\n[2001:db8::1]:6881"
-    },
-    "banPeer": {
-      "title": "피어 차단",
-      "description": "{{address}}을(를) 차단하시겠습니까?"
     },
     "banPeerPermanent": {
       "title": "피어 영구 차단",
@@ -1118,24 +1155,17 @@
     "network": "네트워크",
     "seeds": "시드",
     "peers": "피어",
-    "downSpeed": "다운로드 속도",
-    "upSpeed": "업로드 속도",
     "downLimit": "다운로드 제한",
     "upLimit": "업로드 제한",
-    "connections": "연결",
     "time": "시간",
     "addedOn": "추가 날짜",
     "completedOn": "완료 날짜",
-    "lastActivity": "마지막 활동",
-    "lastSeen": "마지막 발견",
-    "eta": "ETA",
     "timeActive": "활성 시간",
     "seedingTime": "시딩 시간",
     "limits": "제한",
     "ratioLimit": "비율 제한",
     "seedingTimeLimit": "시딩 시간 제한",
     "inactiveSeedingLimit": "비활성 시딩 제한",
-    "info": "정보",
     "pieceSize": "조각 크기",
     "pieces": "조각",
     "createdOn": "생성 날짜",
@@ -1144,7 +1174,6 @@
   "trackersTable": {
     "status": "상태",
     "tracker": "트래커",
-    "tier": "계층",
     "seeds": "시드",
     "leeches": "리처",
     "downloaded": "DL",
@@ -1163,7 +1192,6 @@
     "upSpeed": "UL 속도",
     "downloaded": "다운로드됨",
     "uploaded": "업로드됨",
-    "relevance": "관련성",
     "copyIpAddress": "주소 복사",
     "banPeer": "피어 차단",
     "noPeersConnected": "연결된 피어 없음",
@@ -1185,7 +1213,7 @@
     "url": "URL",
     "noHttpSources": "HTTP 소스 없음",
     "searchUrls": "URL 검색...",
-    "httpSources": "HTTP 소스 {{count}}개",
+    "httpSources_other": "HTTP 소스 {{count}}개",
     "filteredCount": "{{total}}개 중 {{filtered}}개",
     "copyUrl": "URL 복사",
     "toast": {
@@ -1204,7 +1232,7 @@
     "expandAll": "모두 펼치기",
     "collapseAll": "모두 접기",
     "searchFiles": "파일 검색...",
-    "fileCount": "파일 {{count}}개",
+    "fileCount_other": "파일 {{count}}개",
     "filteredCount": "{{total}}개 중 {{filtered}}개",
     "noFiles": "파일 없음",
     "headers": {
@@ -1409,7 +1437,7 @@
       "title": "토렌트 검색",
       "description": "이름, 카테고리 또는 태그로 검색합니다. *.mkv 또는 *1080p* 같은 glob 패턴을 지원합니다.",
       "placeholder": "토렌트 검색...",
-      "globExamples": "*.mkv, *1080p*, S??E??",
+      "globExamples": "*.mkv, *1080p*, *S[0-9][0-9]E[0-9][0-9]*",
       "autoSearches": "입력 후 자동 검색"
     },
     "shareLimit": {
@@ -1456,12 +1484,25 @@
     "descending": "내림차순",
     "sortDirection": "{{direction}} 정렬",
     "toggleColumns": "열 전환",
+    "stretchMode": "이름 열을 늘려 테이블을 채우기",
+    "scrollMode": "이름 열 너비를 직접 설정하고 가로로 스크롤",
+    "stretchInactive": "표시된 열이 이미 테이블을 채우고 있어 일시 중지됨",
+    "reorderColumn": "{{column}} 순서를 변경하려면 드래그",
     "tableAriaLabel": "토렌트 테이블"
   },
   "sort": {
     "label": "정렬",
     "ascending": "오름차순",
-    "descending": "내림차순"
+    "descending": "내림차순",
+    "options": {
+      "addedOn": "최근 추가됨",
+      "downloadLimit": "다운로드 제한",
+      "uploadLimit": "업로드 제한",
+      "sessionDownloaded": "다운로드됨 (세션)",
+      "sessionUploaded": "업로드됨 (세션)",
+      "lastSeenComplete": "마지막 완전본 발견",
+      "reannounceIn": "재요청까지"
+    }
   },
   "tableColumns": {
     "selectAll": "토렌트 선택",
@@ -1477,7 +1518,6 @@
     "size": "크기",
     "totalSize": "전체 크기",
     "progress": "진행률",
-    "state": "상태",
     "seeds": "시드",
     "peers": "피어",
     "downSpeed": "다운로드 속도",
@@ -1520,6 +1560,7 @@
   "stateLabels": {
     "downloading": "다운로드 중",
     "metaDL": "메타데이터 가져오는 중",
+    "forcedMetaDL": "(강제) 메타데이터 가져오는 중",
     "allocating": "할당 중",
     "stalledDL": "정체됨",
     "queuedDL": "대기 중",
@@ -1537,8 +1578,10 @@
     "error": "오류",
     "missingFiles": "파일 누락",
     "checkingResumeData": "재개 데이터 확인 중",
-    "moving": "이동 중"
+    "moving": "이동 중",
+    "unknown": "알 수 없음"
   },
+  "stateLabelFallback": "인식할 수 없음",
   "details": {
     "failedToUpdatePriorities": "파일 우선순위를 업데이트하지 못했습니다",
     "failedToRenameFile": "파일 이름을 변경하지 못했습니다",
@@ -1571,6 +1614,39 @@
     "applyFailed": "크로스시드 실패: {{message}}",
     "addOptionTitle": "크로스시드로 추가",
     "addOptionDescription": "다운로드하는 대신 이 토렌트를 기존 토렌트와 매칭합니다.",
-    "addOptionButton": "수동 매칭"
+    "addOptionButton": "수동 매칭",
+    "pack": {
+      "description": "수동 매칭에는 토렌트 하나를, 시즌 팩 조립에는 여러 에피소드를 선택하세요.",
+      "targetLabel": "대상 토렌트",
+      "checking": "선택한 에피소드를 확인하는 중...",
+      "checkFailed": "선택 항목을 확인할 수 없습니다.",
+      "coverage": "{{total}}개 중 {{matched}}개 에피소드 · {{percent}}% 포함",
+      "missing": "{{size}} 부족",
+      "recheck": "팩을 일시 정지 상태로 추가하고 재검사합니다. 검사 결과가 연결된 바이트 비율에 도달하면 재개합니다.",
+      "reviewRules": "Cross-seed → 규칙에서 보호 설정 확인",
+      "proposalLimit": "이 팩에는 에피소드가 {{count}}개 있습니다. 제안은 토렌트 {{limit}}개로 제한됩니다. 검색으로 누락된 대상을 선택하세요.",
+      "dropped": "팩을 추가했습니다. 제외된 대상: {{names}}",
+      "rejected": "{{name}}: {{reason}}",
+      "reasons": {
+        "no_filesystem_access": "팩을 조립하려면 이 인스턴스에 로컬 파일 시스템 접근 권한이 필요합니다.",
+        "no_link_mode": "여러 대상을 선택하려면 이 인스턴스에서 하드링크 또는 reflink 모드를 활성화하세요.",
+        "no_base_directory": "이 인스턴스의 링크 기본 디렉터리를 설정하세요.",
+        "no_episode_files": "이 팩에서 재생 가능한 에피소드 파일을 찾지 못했습니다.",
+        "target_not_found": "이 인스턴스에서 대상을 찾지 못했습니다.",
+        "incomplete": "대상 다운로드가 완료되지 않았습니다.",
+        "no_episode_identity": "에피소드 번호를 해석할 수 없습니다.",
+        "file_list_unavailable": "대상 파일 목록을 사용할 수 없습니다.",
+        "episode_file_invalid": "대상에는 선택한 에피소드 식별자와 일치하는 재생 가능한 파일이 하나 있어야 합니다.",
+        "size_mismatch": "로컬 파일 크기가 팩 파일 크기와 다릅니다.",
+        "release_mismatch": "릴리스가 팩과 일치하지 않습니다.",
+        "local_file_unavailable": "로컬 파일이 없거나 사용할 수 없습니다.",
+        "not_paired": "이 대상에 팩 에피소드가 없거나 다른 선택 대상이 이미 해당 에피소드를 제공합니다.",
+        "layout_mismatch": "선택한 파일로 안전한 링크 구조를 만들 수 없습니다.",
+        "unsafe_piece_boundary": "선택한 파일과 누락된 파일이 데이터 블록을 공유하므로 조각 경계 보호가 이 팩을 차단했습니다. 해당 블록을 다운로드하면 하드링크를 통해 원본 파일이 변경될 수 있습니다. 수동 조립에는 커버리지 임계값이 적용되지 않습니다.",
+        "already_exists": "이 토렌트가 이미 존재합니다.",
+        "link_failed": "링크를 만들지 못했습니다.",
+        "add_failed": "토렌트를 추가하지 못했습니다."
+      }
+    }
   }
 }

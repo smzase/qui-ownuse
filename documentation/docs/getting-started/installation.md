@@ -1,7 +1,8 @@
 ---
 sidebar_position: 1
-title: Installation
-description: Install qui on Linux with a single command.
+title: Install qui, the web UI for qBittorrent
+sidebar_label: Installation
+description: Install qui on Linux with one command, download the binary for Linux, macOS, or Windows, or run the Docker image.
 ---
 
 # Installation
@@ -25,7 +26,7 @@ If the command fails with a permission error, run it again with `sudo`. If you d
 
 ## Manual download
 
-Download the latest release for your platform from the [releases page](https://github.com/autobrr/qui/releases). Windows users should follow the [Windows guide](./windows.md).
+Download the latest release for your platform from the [releases page](https://github.com/autobrr/qui/releases). Windows users should follow the [Windows guide](./windows.md). For containers, see the [Docker guide](./docker.md), and for shared seedboxes, the [seedbox installers](./seedbox-installers.md).
 
 On Linux or macOS, extract the archive:
 
@@ -48,9 +49,50 @@ chmod +x qui
 ./qui serve
 ```
 
-The web interface is available at http://localhost:7476.
+The web interface is available at http://localhost:7476. To change the port or other settings, see [environment variables](../configuration/environment.md).
 
 ## Updating
+
+:::warning This fork
+Use releases built from `smzase/qui-zh_cn` when updating this fork. Official `autobrr/qui` binaries do not contain its Transmission integration, multi-user permissions, or other fork changes.
+
+Automatic installation of official releases from the web UI is disabled in this fork, even when `disableSelfUpdate` is false. The upstream shell updater described below also targets official releases; do not use it to update this fork.
+:::
+
+### Manual upload in this fork
+
+On a standalone Linux installation, open **Settings → Application → Manual Update** and upload this fork's executable or release archive for the running architecture. The application account needs write access to its binary directory. The page displays upload progress, then reloads after the application shuts down and restarts.
+
+Only administrators and users granted the update permission can upload an update or request a restart. Upload and restart actions share one lock; a second action is refused while the first is running.
+
+Before upgrading, stop qui and back up its configuration directory, database, and current executable. Uploaded updates replace the executable and do not create the versioned backup described for upstream's updater below. Rolling back a database migration requires restoring the database backup too.
+
+This merge migrates existing instance ownership, shares, user permissions, client settings, and Transmission instances in place. SQLite and PostgreSQL use separate migration sequences. Do not copy upstream migration records over a fork database.
+
+### Upstream installation instructions
+
+The following automatic update instructions describe the official upstream distribution.
+
+On Windows, follow [Updating](./windows.md#updating) in the Windows guide.
+
+### Update from the web UI
+
+When a new release is available, click **Install update** in the update banner or in the **Update Status** row of **Settings → Application**. The dialog shows the current version, the new version, and a link to the release notes. After you confirm, qui downloads the release, checks its signature, replaces its binary, and restarts. The page reloads when qui is back.
+
+When a new release is available, qui shows **Install update** for every setup. If automatic installation is unavailable, the dialog explains why. It gives manual update steps and a link to the relevant guide.
+
+Automatic installation requires all of these conditions:
+
+- qui does not run in a container. To update a container, pull a new image.
+- The running version is a release build, not a local or develop build.
+- qui can write to the directory of its binary. If root owns that directory and qui runs as another user, use `sudo qui update`.
+- Update checks are on (`checkForUpdates`), and `disableSelfUpdate` is not `true`. See the [configuration reference](../configuration/reference.md).
+
+While qui checks update support, **Install update** is disabled. If the support check fails, open the dialog and click **Retry**. No update starts until the check succeeds and you confirm installation.
+
+If the update fails before qui replaces its binary, the dialog shows the error and qui keeps running on the old version.
+
+### Update from the shell
 
 The `qui update` command downloads and installs the latest release:
 
@@ -60,9 +102,27 @@ qui update
 
 If you installed qui to `/usr/local/bin` with `sudo`, run `sudo qui update`. If the binary is not on your PATH, run `./qui update` from its directory.
 
+### Roll back an update
+
+Both update methods keep the previous binary as `qui-v<old version>.bak` in the directory of the binary. Each update deletes older backups. The web UI shows the exact rollback command when qui does not answer 60 seconds after an update. The shell update prints it.
+
+To roll back, stop qui, move the backup back, and start qui again. Replace `1.30.0` with the version in the backup file name, and `/usr/local/bin` with the directory of your binary:
+
+```bash
+mv "/usr/local/bin/qui-v1.30.0.bak" "/usr/local/bin/qui"
+```
+
+On Windows, follow [Roll back an update](./windows.md#roll-back-an-update) in the Windows guide.
+
+:::warning
+If you want a full rollback, back up the qui config directory before you update. A new version can migrate the database, which changes its structure. The old version cannot always read a migrated database, and a move of the backup binary does not undo a migration.
+:::
+
 ## First setup
 
 1. Open your browser at http://localhost:7476
 2. Create your account
 3. Add your qBittorrent instances
 4. Manage your torrents
+
+Create the account before you expose qui to the Internet, and read [Sessions](../configuration/reference.md#sessions) before you put qui behind HTTPS.

@@ -463,13 +463,6 @@
       "loadingDescription": "正在載入可用主題...",
       "description": "從可用主題中選擇。進階主題需要有效的授權。",
       "verificationUnavailable": "授權驗證不可用。進階主題切換暫時停用。",
-      "freeBadge": "免費",
-      "freeThemes": "免費主題",
-      "premiumBadge": "進階",
-      "premiumThemes": "進階主題",
-      "notLoaded": "進階主題未載入",
-      "notLoadedDescription": "配置",
-      "notLoadedAnd": "並執行",
       "premium": "進階",
       "pro": "Pro",
       "free": "免費",
@@ -481,122 +474,20 @@
       "premiumRequiredDescription": "新增有效的進階授權以解鎖進階主題。"
     },
     "license": {
-      "loadingTitle": "授權管理",
-      "loadingDescription": "正在載入主題授權...",
-      "managementTitle": "授權管理",
-      "managementDescription": "管理您的主題授權和進階存取權限",
-      "providers": {
-        "dodoPortal": "Dodo 門戶",
-        "polarPortal": "Polar 門戶",
-        "legacyPolarPortal": "舊版 Polar 門戶"
-      },
-      "status": {
-        "unlockTitle": "解鎖進階主題",
-        "unlockDescription": "隨心付費（最低 $9.99）· 終身授權 · 所有主題",
-        "activeTitle": "進階存取已啟用",
-        "activeDescription": "您可以存取所有目前和未來的進階主題",
-        "activationRequiredTitle": "需要啟用授權",
-        "activationRequiredDescription": "您的授權需要在此裝置上啟用"
-      },
-      "portalHelp": {
-        "prefix": "在 DodoPayments 購買，然後在此輸入您的授權金鑰。如果丟失了金鑰，可透過",
-        "suffix": "找回。"
-      },
-      "discord": {
-        "title": "Discord 福利",
-        "prefix": "領取",
-        "afterRole": "身分組以存取私密頻道。",
-        "openDiscord": "開啟 qui Discord",
-        "opensInNewTab": "（在新分頁中開啟）",
-        "afterLink": "，執行",
-        "copyVerifyAriaLabel": "複製 /verify 命令",
-        "copyVerifyTitle": "點選複製",
-        "verifyCommand": "/verify",
-        "afterVerify": "在",
-        "channel": "#qui",
-        "suffix": "，並使用您的授權電子郵件登入。"
-      },
-      "details": {
-        "productAdded": "{{productName}} · 新增於 {{date}}",
-        "productStatusAndAdded": "{{productName}} · 狀態：{{status}} · 新增於 {{date}}"
-      },
-      "invalid": {
-        "polarPrefix": "此授權未在此裝置上啟用。點選重新啟用以在此使用。如果達到啟用上限，請在另一臺已啟用的裝置上停用，或透過",
-        "polarSuffix": "管理啟用。",
-        "dodo": "此授權未在此裝置上啟用。點選重新啟用以在此使用。如果達到啟用上限，請在另一臺目前已啟用的裝置上停用。"
-      },
-      "actions": {
-        "addLicense": "新增授權",
-        "remove": "移除",
-        "removing": "移除中...",
-        "getPremium": "獲取進階版",
-        "reactivate": "重新啟用授權",
-        "activating": "啟用中...",
-        "copyLicenseKey": "複製授權金鑰",
-        "activate": "啟用授權",
-        "validating": "驗證中...",
-        "openDodoCheckout": "開啟 DodoPayments 結帳",
-        "openDodoPortal": "開啟 Dodo 門戶"
-      },
-      "deleteDialog": {
-        "title": "移除授權？",
-        "description": "確定要從此裝置移除此授權嗎？qui 也會嘗試釋放遠端啟用名額，但即使該請求失敗，本機移除仍會完成。",
-        "keyLabel": "要移除的授權金鑰：",
-        "recoverPrefix": "如有需要，您可以稍後從"
-      },
-      "addDialog": {
-        "title": "新增進階授權",
-        "description": "輸入您的進階主題授權金鑰以解鎖所有進階主題。",
-        "label": "授權金鑰",
-        "placeholder": "輸入您的進階主題授權金鑰",
-        "recoverKey": "找回金鑰？",
-        "validation": {
-          "required": "授權金鑰為必填項"
-        }
-      },
-      "paymentDialog": {
-        "title": "獲取進階授權",
-        "description": "隨心付費（最低 $9.99）· 終身授權 · 所有主題",
-        "steps": {
-          "choosePaymentMethod": {
-            "title": "選擇支付方式",
-            "cardTitle": "銀行卡或本機支付",
-            "cardDescription": "直接在 DodoPayments 中支付。支付完成後將返回 qui。",
-            "cryptoTitle": "加密貨幣",
-            "cryptoDescription": "加密貨幣支付仍在 DodoPayments 結帳中完成。",
-            "xmrHelp": "XMR 為手動支付：請在 Discord 上聯絡或發郵件至 s0up4200@pm.me。",
-            "cryptoSteps": {
-              "readmePrefix": "使用",
-              "readmeSuffix": "中的位址進行捐贈。",
-              "verifyPrefix": "在",
-              "verifySuffix": "進行驗證以獲取折扣碼。",
-              "applyCode": "開啟 DodoPayments 結帳，在折扣碼處貼上程式碼，然後點選應用。",
-              "completeCheckout": "確認總計為 $0.00，然後完成結帳。"
-            }
-          },
-          "findLicenseKey": {
-            "title": "找到您的授權金鑰",
-            "description": "授權金鑰會在結帳後顯示。您也可以稍後從 Dodo 客戶門戶找回。"
-          },
-          "activateLicense": {
-            "title": "啟用您的授權",
-            "description": "從結帳返回後，使用「新增授權」來啟用您的金鑰。"
-          }
-        }
-      },
-      "copiedVerify": "驗證命令已複製",
-      "failedCopyVerify": "複製驗證命令失敗",
-      "toasts": {
-        "activationSuccess": "授權啟用成功！",
-        "activationSuccessPremium": "進階存取已啟用！感謝您的支援！",
-        "paymentCompleted": "支付完成。請新增您的進階授權金鑰以完成設定。",
-        "paymentNotCompleted": "支付未成功完成。",
-        "returnedFromCheckout": "已從結帳返回。準備好後請新增您的進階授權金鑰。",
-        "keyCopied": "授權金鑰已複製到剪貼簿",
-        "copyFailed": "複製授權金鑰失敗",
-        "removedFromMachine": "授權已從此裝置移除",
-        "refreshedAll": "所有授權重新整理成功",
-        "refreshFailed": "重新整理授權失敗"
+      "errors": {
+        "expired": "您的授權金鑰已過期。",
+        "notActive": "此授權金鑰已不再有效。",
+        "invalid": "此授權金鑰無效。",
+        "notFound": "您輸入的授權金鑰無效。",
+        "databaseCopied": "此授權已在另一臺裝置上啟用。資料庫似乎是複製過來的。",
+        "conditionsMismatch": "授權金鑰不符合要求的條件。",
+        "activationLimit": "已達到授權啟用上限。請前往 <portal>licenses.getqui.com</portal>，使用購買授權時的電子郵件註冊或登入。開啟 Machine Instances，停用一臺不再使用的裝置，然後重試。",
+        "limitReached": "已達到授權啟用上限。",
+        "usageLimit": "已超出授權使用上限。",
+        "unreachable": "無法連線至授權服務。請稍後重試。",
+        "tooManyAttempts": "嘗試次數過多。請稍候再試。",
+        "rateLimited": "請稍候再試。",
+        "generic": "驗證授權金鑰失敗。請重試。"
       }
     },
     "custom": {
@@ -605,12 +496,22 @@
       "lockedTitle": "自訂主題是進階功能",
       "lockedDescription": "解鎖進階版即可從磁碟目錄載入您自己的主題 CSS 檔案。",
       "unlockCta": "解鎖進階版",
-      "directoryLabel": "主題目錄",
       "refresh": "重新整理",
       "detectedCount": "找到的主題：{{total}}",
       "parseErrorsTitle": "無法解析以下檔案：",
       "noneFound": "未找到自訂主題。請將 .css 檔案放入主題目錄，然後點選重新整理。",
       "loadError": "無法載入自訂主題。請檢查伺服器日誌和主題目錄權限。"
+    },
+    "layout": {
+      "mobileSplit": "為行動版面配置使用獨立主題",
+      "mobileSplitHelp": "行動版面配置（寬度小於 768 px 的視窗）與桌面版面配置各自保留自己的主題、模式與變體。此設定適用於所有瀏覽器。",
+      "localOnly": "在此瀏覽器中本機保留主題",
+      "localOnlyHelp": "此瀏覽器不會從伺服器取得主題，也不會將其主題變更傳送到伺服器。此設定僅適用於此瀏覽器。",
+      "changesMobile": "變更行動主題",
+      "changesDesktop": "變更桌面主題",
+      "changesLocal": "僅變更此瀏覽器的主題。若要變更行動版面配置設定，請關閉本機設定。",
+      "saveError": "儲存主題設定失敗",
+      "mobileSplitOffWarning": "關閉此設定會刪除行動主題。"
     }
   },
   "arrInstances": {
@@ -708,10 +609,6 @@
   },
   "indexers": {
     "title": "Torznab 索引器",
-    "addIndexer": "新增索引器",
-    "autodiscoverProwlarr": "從 Prowlarr 自動發現",
-    "noIndexers": "尚未配置索引器。",
-    "noIndexersDescription": "新增一個 Torznab 相容的索引器以啟用自動 cross-seed 搜尋。",
     "deleteIndexer": "刪除索引器",
     "deleteIndexerDescription": "確定要刪除「{{name}}」嗎？此操作無法復原。",
     "deleteAllIndexers": "刪除所有索引器",
@@ -720,8 +617,6 @@
       "loadFailed": "載入索引器失敗",
       "deletedSuccess": "索引器已刪除",
       "deleteFailed": "刪除索引器失敗",
-      "allDeletedSuccess": "所有索引器已刪除",
-      "allDeletedFailed": "刪除所有索引器失敗",
       "deleteAllSuccess": "已刪除全部 {{count}} 個索引器",
       "deleteAllPartial": "已刪除 {{success}} 個索引器，{{failed}} 個失敗：{{names}}",
       "testSuccess": "連線測試成功",
@@ -867,7 +762,6 @@
         "importSuccess": "成功：{{details}}",
         "importWithWarnings": "{{details}}（{{warningCount}} 個有警告）",
         "moreWarnings": "...還有 {{count}} 個警告",
-        "importErrors": "{{details}}",
         "moreErrors": "...還有 {{count}} 個錯誤",
         "created": "{{count}} 個已建立",
         "updated": "{{count}} 個已更新",
@@ -927,10 +821,6 @@
     },
     "activity": {
       "title": "排程器活動",
-      "idle": "空閒",
-      "queueLength": "佇列",
-      "workers": "工作執行緒",
-      "cooldown": "冷卻",
       "running": "執行中",
       "queued": "排隊中",
       "rateLimited": "速率受限",
@@ -972,6 +862,20 @@
         "episode": "集"
       }
     }
+  },
+  "gazelle": {
+    "title": "Gazelle（OPS/RED）",
+    "description": "啟用對 Orpheus 和 Redacted 的直接 API 匹配。這與 Torznab 並行執行；OPS/RED Torznab 索引器將被忽略。",
+    "enableMatching": "啟用 Gazelle 匹配",
+    "enableDescription": "應用於所有源種子。如果可能，qui 還會透過 Gazelle 檢查 RED/OPS。",
+    "redactedApiKey": "Redacted API 金鑰",
+    "orpheusApiKey": "Orpheus API 金鑰",
+    "pasteRedKey": "貼上 RED API 金鑰",
+    "pasteOpsKey": "貼上 OPS API 金鑰",
+    "enableToConfigure": "啟用後進行配置",
+    "redDescription": "用於 redacted.sh 查詢。貼上以替換，清空以移除。",
+    "opsDescription": "用於 orpheus.network 查詢。貼上以替換，清空以移除。",
+    "save": "儲存"
   },
   "searchCache": {
     "title": "搜尋快取",
@@ -1028,6 +932,68 @@
         "upToDateDetail": "正在執行最新版本",
         "notCheckedYet": "尚未檢查",
         "lastChecked": "上次檢查 {{date}}"
+      }
+    },
+    "restart": {
+      "button": "重新啟動",
+      "confirmTitle": "重新啟動 qui？",
+      "confirmDescription": "qui 會像正常停止時一樣關閉，然後重新啟動。正在執行的工作，例如交叉做種搜尋、自動化、備份和孤立檔案掃描，都會停止。qui 恢復後頁面會自動重新載入。",
+      "confirm": "重新啟動",
+      "overlay": {
+        "restartingTitle": "正在重新啟動 qui…",
+        "restartingDetail": "qui 再次回應後頁面會重新載入。",
+        "slowTitle": "qui 尚未回應",
+        "slowDetail": "qui 可能仍在啟動，此頁面會繼續等待。請查看 qui 日誌。如果你變更了連接埠或基礎 URL，請在新位址開啟 qui。"
+      }
+    },
+    "update": {
+      "support": {
+        "checkingTitle": "正在檢查支援情況",
+        "checkingDescription": "正在檢查 qui 是否可以安裝此更新。",
+        "failedTitle": "無法檢查更新支援情況",
+        "failedDescription": "無法檢查是否支援自我更新。",
+        "retryDescription": "安裝更新前，請重試支援檢查。",
+        "retry": "重試"
+      },
+      "unavailable": {
+        "description": "此環境不支援自動安裝。",
+        "nextStep": "如何更新",
+        "guide": "更新指南",
+        "container": {
+          "reason": "qui 在容器中執行。更新透過容器映像提供。",
+          "step": "拉取新的 qui 映像，然後使用現有設定和資料卷重新建立容器。"
+        },
+        "disabled": {
+          "reason": "qui 設定中已停用自我更新。",
+          "step": "使用安裝 qui 時所用的套件管理員或安裝方式進行更新。"
+        },
+        "development": {
+          "reason": "此 qui 組建不是發佈版本。自動安裝需要發佈版本。",
+          "step": "停止 qui，將二進位檔替換為官方發佈版本或新組建，然後重新啟動 qui。"
+        },
+        "directory": {
+          "reason": "qui 無法存取或寫入其二進位檔所在的目錄。",
+          "step": "停止 qui，使用有寫入權限的帳號將二進位檔替換為新版本，然後重新啟動 qui。"
+        }
+      },
+      "button": "安裝更新",
+      "confirmTitle": "安裝更新？",
+      "confirmDescription": "qui 會下載新版本，驗證其簽章，並將目前的二進位檔保留為備份。然後 qui 會重新啟動。qui 恢復後頁面會自動重新載入。",
+      "runningWork": "正在執行的工作，例如交叉做種搜尋、自動化、備份和孤立檔案掃描，都會停止。",
+      "currentVersion": "目前版本",
+      "targetVersion": "新版本",
+      "releaseNotes": "發行說明",
+      "confirm": "安裝更新",
+      "overlay": {
+        "notAppliedTitle": "更新未生效",
+        "notAppliedDetail": "qui 已恢復，但執行的是其他版本。請查看 qui 日誌。",
+        "installedTitle": "qui 已更新",
+        "installedDetail": "重新載入頁面以開啟新版本。",
+        "reload": "重新載入頁面",
+        "noBackup": "qui 已更新，但未保留備份：{{error}}。如需回復，請手動下載舊版本。",
+        "rollbackIntro": "如果新版本無法啟動，請執行此命令，然後再次啟動 qui：",
+        "rollbackLabel": "回復命令",
+        "rollbackDocs": "回復步驟"
       }
     },
     "runtime": {

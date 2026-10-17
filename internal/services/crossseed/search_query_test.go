@@ -6,7 +6,7 @@ package crossseed
 import (
 	"testing"
 
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 	"github.com/stretchr/testify/require"
 )
 
@@ -134,4 +134,13 @@ func TestBuildTorznabQueryFallsBackToName(t *testing.T) {
 	got := BuildTorznabQuery("  Untitled Thing  ", &release, false)
 
 	require.Equal(t, "untitled thing", got.Query)
+}
+
+func TestBuildTorznabQueryKeepsSeasonNumeral(t *testing.T) {
+	release := rls.Release{Type: rls.Series, Title: "Kaiju Squad 100 III", Series: 3}
+
+	got := BuildTorznabQuery("[GRP] Kaiju Squad 100 III (BD 1080p HEVC FLAC) [Dual-Audio]", &release, false)
+
+	require.Equal(t, "Kaiju Squad 100 III", got.Query)
+	require.Equal(t, intPtr(3), got.Season)
 }

@@ -15,7 +15,8 @@
     }
   },
   "managementBar": {
-    "ariaLabel": "{{count}} torrent{{plural}} selected - Bulk actions available",
+    "ariaLabel_one": "{{count}} torrent selected - Bulk actions available",
+    "ariaLabel_other": "{{count}} torrents selected - Bulk actions available",
     "resume": "Resume",
     "pause": "Pause",
     "forceRecheck": "Force Recheck",
@@ -532,7 +533,6 @@
     "renameFolder": "Rename folder",
     "download": "Download",
     "mediaInfo": "MediaInfo",
-    "toggle": "Toggle",
     "selectFileForDownload": "Select file for download",
     "skipFileDownload": "Skip file download",
     "selectAllFilesIn": "Select all files in {{name}}",
@@ -553,6 +553,31 @@
     "toast": {
       "copied": "{{label}} copied to clipboard",
       "copyFailed": "Failed to copy to clipboard"
+    }
+  },
+  "discScan": {
+    "action": "BDInfo",
+    "actionActive": "BDInfo scan in progress",
+    "actionReady": "BDInfo report ready",
+    "actionFailed": "BDInfo scan failed",
+    "quickSummary": "Quick Summary",
+    "forum": "Forum",
+    "copyQuickSummary": "Copy Quick Summary",
+    "copyForum": "Copy Forum Block",
+    "rescan": "Rescan",
+    "cancel": "Cancel scan",
+    "retry": "Retry",
+    "starting": "Starting scan...",
+    "queued": "Queued, position {{position}}",
+    "scanning": "Scanning {{processed}} of {{total}}",
+    "scanningUnknown": "Scanning...",
+    "failed": "Scan failed",
+    "canceled": "Scan canceled",
+    "toast": {
+      "copied": "{{label}} copied to clipboard",
+      "copyFailed": "Failed to copy to clipboard",
+      "completed": "BDInfo report ready",
+      "failed": "BDInfo scan failed: {{error}}"
     }
   },
   "categoryTree": {
@@ -655,22 +680,28 @@
     "deleteEmptyCategories": {
       "title": "Remove Empty Categories",
       "noEmpty": "There are no empty categories to remove.",
-      "confirm": "Are you sure you want to remove {{count}} empty categor{{plural}}? This action cannot be undone.",
+      "confirm_one": "Are you sure you want to remove {{count}} empty category? This action cannot be undone.",
+      "confirm_other": "Are you sure you want to remove {{count}} empty categories? This action cannot be undone.",
       "cancel": "Cancel",
-      "remove": "Remove {{count}} Categor{{plural}}",
+      "remove_one": "Remove {{count}} Category",
+      "remove_other": "Remove {{count}} Categories",
       "toast": {
-        "success": "Removed {{count}} empty categor{{plural}}",
+        "success_one": "Removed {{count}} empty category",
+        "success_other": "Removed {{count}} empty categories",
         "error": "Failed to remove empty categories"
       }
     },
     "deleteUnusedTags": {
       "title": "Delete Unused Tags",
       "noUnused": "There are no unused tags to delete.",
-      "confirm": "Are you sure you want to delete {{count}} unused tag{{plural}}? This action cannot be undone.",
+      "confirm_one": "Are you sure you want to delete {{count}} unused tag? This action cannot be undone.",
+      "confirm_other": "Are you sure you want to delete {{count}} unused tags? This action cannot be undone.",
       "cancel": "Cancel",
-      "delete": "Delete {{count}} Tag{{plural}}",
+      "delete_one": "Delete {{count}} Tag",
+      "delete_other": "Delete {{count}} Tags",
       "toast": {
-        "success": "Deleted {{count}} unused tag{{plural}}",
+        "success_one": "Deleted {{count}} unused tag",
+        "success_other": "Deleted {{count}} unused tags",
         "error": "Failed to delete unused tags"
       }
     }
@@ -696,7 +727,8 @@
     "contentFilteringInProgress": "Content Filtering In Progress",
     "analyzingContent": "Analyzing existing content...",
     "smartFilteringActive": "Smart Filtering Active",
-    "indexersFiltered": "{{count}} indexer{{plural}} filtered",
+    "indexersFiltered_one": "{{count}} indexer filtered",
+    "indexersFiltered_other": "{{count}} indexers filtered",
     "contentFilteringDescription": "Checking your existing torrents to find duplicates and exclude redundant trackers. This helps avoid downloading the same content multiple times.",
     "excludedDescription": "You already seed this release from these trackers, so they're excluded from the search.",
     "noContentDuplicates": "Content filtering completed. No duplicate content found on your enabled trackers.",
@@ -788,6 +820,26 @@
     "setConditions": "Set conditions to filter this column",
     "operation": "Operation",
     "selectOperation": "Select operation",
+    "operations": {
+      "equalTo": "Equal to",
+      "notEqualTo": "Not equal to",
+      "greaterThan": "Greater than",
+      "greaterThanOrEqual": "Greater than or equal",
+      "lessThan": "Less than",
+      "lessThanOrEqual": "Less than or equal",
+      "between": "Between",
+      "equals": "Equals",
+      "notEquals": "Not equals",
+      "contains": "Contains",
+      "doesNotContain": "Does not contain",
+      "startsWith": "Starts with",
+      "endsWith": "Ends with",
+      "on": "On",
+      "after": "After",
+      "before": "Before",
+      "is": "Is",
+      "isNot": "Is not"
+    },
     "value": "Value",
     "from": "From",
     "to": "To",
@@ -856,7 +908,10 @@
       }
     },
     "title": "Filters",
-    "clearAll": "Clear all",
+    "clearOptions": "Filter clearing options",
+    "clearSidebarFilters": "Clear sidebar filters",
+    "clearColumnFilters": "Clear column filters",
+    "clearFiltersAndSearch": "Clear filters and search",
     "loading": "Loading...",
     "customFilter": "Custom Filter",
     "customFilterHelp": "Active custom expression filter (e.g., cross-seed results)",
@@ -876,18 +931,15 @@
     "uncategorized": "Uncategorized",
     "tags": "Tags",
     "trackers": "Trackers",
-    "customExpression": "Custom Expression",
     "untagged": "Untagged",
     "noTracker": "No tracker",
     "hideEmpty": "Hide empty",
     "showEmpty": "Show empty",
-    "showHidden": "Show {{count}} hidden",
     "searchCategories": "Search categories",
     "searchTags": "Search tags",
     "searchTrackers": "Search trackers",
     "noCategoriesFound": "No categories found matching \"{{query}}\"",
     "noTagsFound": "No tags found matching \"{{query}}\"",
-    "hiddenMatchSearch": "{{count}} hidden match search",
     "createTag": "Create tag",
     "createCategory": "Create category",
     "createSubcategory": "Create Subcategory",
@@ -969,13 +1021,11 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "zoomReset": "Reset zoom",
-    "zoomLevel": "{{level}}%",
     "connectionConnectable": "Connectable",
     "connectionUnknown": "Connection status unknown",
     "connectionPort": "Port: {{port}}",
     "connectionAriaLabel": "qBittorrent connection status: {{status}}",
     "connectionAriaLabelUnknown": "qBittorrent connection status unknown",
-    "external": "External",
     "externalIpAddresses": "External IP addresses",
     "streamStatus": {
       "crossInstance": {
@@ -1006,7 +1056,8 @@
         "message": "Using {{seconds}}s polling until the SSE connection is ready.",
         "secondary": "Polling every {{seconds}}s"
       }
-    }
+    },
+    "dualStack": "IPv4 & IPv6"
   },
   "detailsPanel": {
     "tabs": {
@@ -1029,10 +1080,9 @@
       "trackerUpdated": "Tracker URL updated successfully",
       "trackerUpdateFailed": "Failed to update tracker",
       "fileRenamed": "File renamed successfully",
-      "fileRenameFailed": "Failed to rename file",
       "folderRenamed": "Folder renamed successfully",
-      "folderRenameFailed": "Failed to rename folder",
-      "deletedTorrents": "Deleted {{count}} torrent{{plural}}",
+      "deletedTorrents_one": "Deleted {{count}} torrent",
+      "deletedTorrents_other": "Deleted {{count}} torrents",
       "deletedTorrent": "Deleted torrent: {{name}}",
       "deleteFailed": "Failed to delete: {{error}}"
     },
@@ -1041,10 +1091,6 @@
       "description": "Enter peer addresses (IP:port), one per line or comma-separated",
       "label": "Peers",
       "placeholder": "192.168.1.100:51413\n10.0.0.5:6881\ntracker.example.com:8080\n[2001:db8::1]:6881"
-    },
-    "banPeer": {
-      "title": "Ban Peer",
-      "description": "Are you sure you want to ban {{address}}?"
     },
     "banPeerPermanent": {
       "title": "Ban Peer Permanently",
@@ -1177,24 +1223,17 @@
     "network": "Network",
     "seeds": "Seeds",
     "peers": "Peers",
-    "downSpeed": "Down Speed",
-    "upSpeed": "Up Speed",
     "downLimit": "Down Limit",
     "upLimit": "Up Limit",
-    "connections": "Connections",
     "time": "Time",
     "addedOn": "Added On",
     "completedOn": "Completed On",
-    "lastActivity": "Last Activity",
-    "lastSeen": "Last Seen",
-    "eta": "ETA",
     "timeActive": "Time Active",
     "seedingTime": "Seeding Time",
     "limits": "Limits",
     "ratioLimit": "Ratio Limit",
     "seedingTimeLimit": "Seeding Time Limit",
     "inactiveSeedingLimit": "Inactive Seeding Limit",
-    "info": "Info",
     "pieceSize": "Piece Size",
     "pieces": "Pieces",
     "createdOn": "Created On",
@@ -1203,7 +1242,6 @@
   "trackersTable": {
     "status": "Status",
     "tracker": "Tracker",
-    "tier": "Tier",
     "seeds": "Seeds",
     "leeches": "Leeches",
     "downloaded": "DLs",
@@ -1222,7 +1260,6 @@
     "upSpeed": "UL Speed",
     "downloaded": "Downloaded",
     "uploaded": "Uploaded",
-    "relevance": "Relevance",
     "copyIpAddress": "Copy address",
     "banPeer": "Ban Peer",
     "noPeersConnected": "No peers connected",
@@ -1244,7 +1281,8 @@
     "url": "URL",
     "noHttpSources": "No HTTP sources",
     "searchUrls": "Search URLs...",
-    "httpSources": "{{count}} HTTP source{{plural}}",
+    "httpSources_one": "{{count}} HTTP source",
+    "httpSources_other": "{{count}} HTTP sources",
     "filteredCount": "{{filtered}} of {{total}}",
     "copyUrl": "Copy URL",
     "toast": {
@@ -1263,7 +1301,8 @@
     "expandAll": "Expand All",
     "collapseAll": "Collapse All",
     "searchFiles": "Search files...",
-    "fileCount": "{{count}} file{{plural}}",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
     "filteredCount": "{{filtered}} of {{total}}",
     "noFiles": "No files",
     "headers": {
@@ -1485,7 +1524,7 @@
       "title": "Search Torrents",
       "description": "Search by name, category, or tags. Supports glob patterns like *.mkv or *1080p*.",
       "placeholder": "Search torrents...",
-      "globExamples": "*.mkv, *1080p*, S??E??",
+      "globExamples": "*.mkv, *1080p*, *S[0-9][0-9]E[0-9][0-9]*",
       "autoSearches": "Auto-searches after typing"
     },
     "shareLimit": {
@@ -1519,12 +1558,25 @@
     "descending": "descending",
     "sortDirection": "Sort {{direction}}",
     "toggleColumns": "Toggle columns",
+    "stretchMode": "Stretch the Name column to fill the table",
+    "scrollMode": "Set the Name column width yourself and scroll sideways",
+    "stretchInactive": "Paused because the visible columns already fill the table",
+    "reorderColumn": "Drag to reorder {{column}}",
     "tableAriaLabel": "Torrents table"
   },
   "sort": {
     "label": "Sort",
     "ascending": "ascending",
-    "descending": "descending"
+    "descending": "descending",
+    "options": {
+      "addedOn": "Recently Added",
+      "downloadLimit": "Download Limit",
+      "uploadLimit": "Upload Limit",
+      "sessionDownloaded": "Session Downloaded",
+      "sessionUploaded": "Session Uploaded",
+      "lastSeenComplete": "Last Seen Complete",
+      "reannounceIn": "Reannounce In"
+    }
   },
   "tableColumns": {
     "selectAll": "Select torrent",
@@ -1540,7 +1592,6 @@
     "size": "Size",
     "totalSize": "Total Size",
     "progress": "Progress",
-    "state": "State",
     "seeds": "Seeds",
     "peers": "Peers",
     "downSpeed": "Down Speed",
@@ -1583,6 +1634,7 @@
   "stateLabels": {
     "downloading": "Downloading",
     "metaDL": "Fetching Metadata",
+    "forcedMetaDL": "(F) Fetching Metadata",
     "allocating": "Allocating",
     "stalledDL": "Stalled",
     "queuedDL": "Queued",
@@ -1600,8 +1652,10 @@
     "error": "Error",
     "missingFiles": "Missing Files",
     "checkingResumeData": "Checking Resume Data",
-    "moving": "Moving"
+    "moving": "Moving",
+    "unknown": "Unknown"
   },
+  "stateLabelFallback": "Unrecognized",
   "details": {
     "failedToUpdatePriorities": "Failed to update file priorities",
     "failedToRenameFile": "Failed to rename file",
@@ -1635,6 +1689,39 @@
     "applyFailed": "Cross-seed failed: {{message}}",
     "addOptionTitle": "Add as cross-seed",
     "addOptionDescription": "Match this torrent against an existing torrent instead of downloading it.",
-    "addOptionButton": "Match manually"
+    "addOptionButton": "Match manually",
+    "pack": {
+      "description": "Select one torrent for a manual match, or several episodes to assemble this season pack.",
+      "targetLabel": "Target torrents",
+      "checking": "Checking selected episodes...",
+      "checkFailed": "Could not check this selection.",
+      "coverage": "{{matched}} of {{total}} episodes · {{percent}}% coverage",
+      "missing": "{{size}} missing",
+      "recheck": "The pack is added paused and rechecked. It resumes when verification reaches the linked byte fraction.",
+      "reviewRules": "Review protection in Cross-seed → Rules",
+      "proposalLimit": "This pack has {{count}} episodes. Proposals are limited to {{limit}} torrents. Use search to select any missing targets.",
+      "dropped": "Pack added. Dropped targets: {{names}}",
+      "rejected": "{{name}}: {{reason}}",
+      "reasons": {
+        "no_filesystem_access": "This instance needs local filesystem access to assemble a pack.",
+        "no_link_mode": "Enable hardlink or reflink mode on this instance to select several targets.",
+        "no_base_directory": "Configure a link base directory on this instance.",
+        "no_episode_files": "No playable episode files were found in this pack.",
+        "target_not_found": "Target not found in this instance.",
+        "incomplete": "Target download is incomplete.",
+        "no_episode_identity": "The episode number could not be parsed.",
+        "file_list_unavailable": "The target file list is unavailable.",
+        "episode_file_invalid": "The target must contain one playable file with the selected episode identity.",
+        "size_mismatch": "The local file size differs from the pack file size.",
+        "release_mismatch": "The release does not match the pack.",
+        "local_file_unavailable": "The local file is missing or unavailable.",
+        "not_paired": "This target did not provide a pack episode, or another selected target already covers it.",
+        "layout_mismatch": "The selected files cannot form a safe link tree.",
+        "unsafe_piece_boundary": "Piece boundary protection blocked this pack because selected and missing files share a data block. Downloading that block can change your original files through hardlinks. The coverage threshold does not apply to manual assembly.",
+        "already_exists": "This torrent already exists.",
+        "link_failed": "Failed to create the links.",
+        "add_failed": "Failed to add the torrent."
+      }
+    }
   }
 }

@@ -9,10 +9,12 @@
  *
  * It mounts the REAL component with the network/router/stream boundaries
  * mocked and a deterministic virtualizer, then asserts the behaviours most
- * likely to break while extracting seams: rows render, and the header
- * select-all toggles row selection. The external data/action hooks mocked
- * here are NOT what the decomposition refactors, so this harness stays stable
- * across the 10 PRs it guards. Real virtualized scrolling and column-filter
+ * likely to break while extracting seams: rows render, the header
+ * select-all toggles row selection, and cross-seed mode keeps the rows the
+ * backend matched for a multi-word search (#2525). The external data/action
+ * hooks mocked here are NOT what the decomposition refactors, so this harness
+ * stays stable across the 10 PRs it guards; `scenario` is the only per-test
+ * knob they read. Real virtualized scrolling and column-filter
  * UI are intentionally left to per-seam unit tests + the manual smoke per PR.
  *
  * IMPORTANT: every mocked hook returns a STABLE singleton reference. Returning
@@ -21,11 +23,19 @@
 
 import { TorrentTableOptimized } from "@/components/torrents/TorrentTableOptimized"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { usePersistedColumnFilters } from "@/hooks/usePersistedColumnFilters"
+import { usePersistedColumnSorting } from "@/hooks/usePersistedColumnSorting"
+import { api } from "@/lib/api"
+import { columnFiltersToExpr } from "@/lib/column-filter-utils"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, within } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { cleanup, fireEvent, render, renderHook, waitFor, within } from "@testing-library/react"
+import type { ComponentProps, ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeTorrent } from "@/test/mockTorrent"
+import { makeFilters } from "@/test/mockFilters"
+
+// Per-test knobs read by the hoisted mocks below. Reset in beforeEach.
+const scenario = vi.hoisted(() => ({ routeSearch: "", isCrossSeedFiltering: false, totalCount: 3 }))
 
 const torrents = [
   makeTorrent({ hash: "hash-aaa", name: "Alpha Release", state: "downloading", progress: 0.5 }),
@@ -48,7 +58,7 @@ vi.mock("react-i18next", async (importOriginal) => {
 
 // Router: avoid needing a real router tree.
 vi.mock("@tanstack/react-router", async (importOriginal) => {
-  const search = {}
+  const search = { get q() { return scenario.routeSearch || undefined } }
   const navigate = vi.fn()
   return {
     ...(await importOriginal<typeof import("@tanstack/react-router")>()),
@@ -95,10 +105,20 @@ vi.mock("@tanstack/react-virtual", () => {
   }
 })
 
+// The grid measures its width through ResizeObserver, which jsdom lacks.
+vi.stubGlobal("ResizeObserver", class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+})
+
 // Network boundary: any api.* call resolves to undefined (real hooks degrade
-// gracefully via their ?? fallbacks).
+// gracefully via their ?? fallbacks). One spy per method so a test can read
+// what the table sent.
 vi.mock("@/lib/api", () => ({
-  api: new Proxy({}, { get: () => vi.fn(() => Promise.resolve(undefined)) }),
+  api: new Proxy({} as Record<string, ReturnType<typeof vi.fn>>, {
+    get: (target, prop: string) => (target[prop] ??= vi.fn(() => Promise.resolve(undefined))),
+  }),
 }))
 
 // Tracker query hooks subscribe to the activity stream (needs a provider);
@@ -121,7 +141,7 @@ vi.mock("@/hooks/useTorrentsList", () => {
     useTorrentsList: () => {
       result ??= {
         torrents,
-        totalCount: torrents.length,
+        get totalCount() { return scenario.totalCount },
         stats: {
           total: torrents.length,
           downloading: 1,
@@ -154,7 +174,7 @@ vi.mock("@/hooks/useTorrentsList", () => {
         streamRetrying: false,
         streamNextRetryAt: undefined,
         streamRetryAttempt: 0,
-        isCrossSeedFiltering: false,
+        get isCrossSeedFiltering() { return scenario.isCrossSeedFiltering },
         isCrossInstanceEndpoint: false,
       }
       return result
@@ -191,21 +211,29 @@ vi.mock("@/hooks/useTorrentActions", () => {
   }
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.clearAllMocks()
+  // jsdom has no execCommand; the copy tests below stub one in.
+  delete (document as { execCommand?: unknown }).execCommand
+})
 
-function renderTable() {
+function renderTable(props: Partial<ComponentProps<typeof TorrentTableOptimized>> = {}) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>{children}</TooltipProvider>
     </QueryClientProvider>
   )
-  return render(<TorrentTableOptimized instanceId={1} />, { wrapper })
+  return render(<TorrentTableOptimized instanceId={1} filters={makeFilters()} {...props} />, { wrapper })
 }
 
 describe("TorrentTableOptimized smoke", () => {
   beforeEach(() => {
     localStorage.clear()
+    scenario.routeSearch = ""
+    scenario.isCrossSeedFiltering = false
+    scenario.totalCount = torrents.length
   })
 
   it("renders a row for each torrent", () => {
@@ -228,5 +256,80 @@ describe("TorrentTableOptimized smoke", () => {
       (cb) => cb !== header && cb.getAttribute("aria-checked") === "true"
     )
     expect(checkedRowsAfter.length).toBeGreaterThan(0)
+  })
+
+  it("clears column filters without clearing sidebar filters or sorting", () => {
+    localStorage.setItem("qui-column-filters-1", JSON.stringify([{ columnId: "ratio", operation: "lt", value: "1" }]))
+    localStorage.setItem("qui-column-sorting:1", JSON.stringify([{ id: "added_on", desc: true }]))
+    const columns = renderHook(() => usePersistedColumnFilters(1))
+    const sorting = renderHook(() => usePersistedColumnSorting([], 1))
+    const onFilterChange = vi.fn()
+    const { getByRole } = renderTable({ filters: makeFilters({ categories: ["Movies"] }), onFilterChange })
+
+    fireEvent.click(getByRole("button", { name: "tableView.clearAllColumnFilters" }))
+
+    expect(columns.result.current[0]).toEqual([])
+    expect(sorting.result.current[0]).toEqual([{ id: "added_on", desc: true }])
+    expect(onFilterChange).not.toHaveBeenCalled()
+  })
+
+  // Issue #2525: in cross-seed mode the table filters client-side. The search
+  // already narrowed rows on the backend (every word must appear somewhere in
+  // the name), so the table must not re-apply it as a literal substring.
+  it("keeps backend-matched rows when a multi-word search meets the cross-seed filter", () => {
+    scenario.routeSearch = "release a"
+    scenario.isCrossSeedFiltering = true
+    const { container } = renderTable()
+    expect(container.textContent).toContain("Alpha Release")
+    expect(container.textContent).toContain("Bravo Release")
+  })
+
+  // Issue #1925 on the copy side: when select-all reaches past the loaded rows,
+  // the field request joins the column filter with the filter expression like a
+  // bulk action does, not the list expression.
+  it("copy-all names past the loaded rows sends the column filter AND the filter expression", async () => {
+    const expr = "Ratio > 1"
+    const columnFilter = { columnId: "name", operation: "contains", value: "Release" } as const
+    localStorage.setItem("qui-column-filters-1", JSON.stringify([columnFilter]))
+    scenario.totalCount = 10
+    vi.mocked(api.getTorrentField).mockResolvedValue({ values: ["Alpha Release"], total: 1 })
+    // jsdom has no clipboard; the copy fallback calls execCommand.
+    document.execCommand = vi.fn(() => true)
+    const { container, findByRole } = renderTable({ filters: makeFilters({ expr }) })
+
+    fireEvent.click(container.querySelector("[role=\"checkbox\"]") as Element)
+    fireEvent.contextMenu(within(container).getByText("Alpha Release"))
+    fireEvent.keyDown(await findByRole("menuitem", { name: "contextMenu.copy" }), { key: "ArrowRight" })
+    fireEvent.click(await findByRole("menuitem", { name: "contextMenu.copyName" }))
+
+    await waitFor(() => expect(api.getTorrentField).toHaveBeenCalled())
+    const [, field, request] = vi.mocked(api.getTorrentField).mock.calls[0]
+    expect(field).toBe("name")
+    expect(request.filters?.expr).toBe(`(${columnFiltersToExpr([columnFilter])}) && (${expr})`)
+  })
+
+  // Issue #1925 on the copy side: in cross-seed mode the column filter applies
+  // client-side, so select-all must mean the rows the user sees. Copy-all names
+  // then copies those rows only, and the selection count says so.
+  it("copy-all names in cross-seed mode copies the rows the column filter left visible", async () => {
+    localStorage.setItem("qui-column-filters-1", JSON.stringify([{ columnId: "name", operation: "contains", value: "Alpha" }]))
+    scenario.isCrossSeedFiltering = true
+    let copied = ""
+    // jsdom has no clipboard; the copy fallback selects a textarea and calls execCommand.
+    document.execCommand = vi.fn(() => {
+      copied = (document.activeElement as HTMLTextAreaElement).value
+      return true
+    })
+    const { container, findByRole } = renderTable({ filters: makeFilters({ expr: "Hash == \"hash-aaa\" || Hash == \"hash-bbb\"" }) })
+    expect(container.textContent).not.toContain("Bravo Release")
+
+    fireEvent.click(container.querySelector("[role=\"checkbox\"]") as Element)
+    fireEvent.contextMenu(within(container).getByText("Alpha Release"))
+    // The copy items sit in a submenu; ArrowRight opens it without pointer events.
+    fireEvent.keyDown(await findByRole("menuitem", { name: "contextMenu.copy" }), { key: "ArrowRight" })
+    fireEvent.click(await findByRole("menuitem", { name: "contextMenu.copyName" }))
+
+    await waitFor(() => expect(copied).toBe("Alpha Release"))
+    expect(api.getTorrentField).not.toHaveBeenCalled()
   })
 })

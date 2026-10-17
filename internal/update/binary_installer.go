@@ -24,8 +24,7 @@ var (
 	ErrRestartPending            = errors.New("an update is already waiting to restart")
 )
 
-// BinaryInstaller replaces the currently running Linux executable with an
-// uploaded binary, then restarts the current process from that new executable.
+// BinaryInstaller replaces the currently running Linux executable with an uploaded binary.
 type BinaryInstaller struct {
 	mu             sync.Mutex
 	restartPending bool
@@ -40,7 +39,7 @@ func (i *BinaryInstaller) IsSupported() bool {
 }
 
 // Install copies and validates the uploaded binary before atomically replacing
-// the current executable. Restart must be called after the HTTP response is sent.
+// the current executable. The caller then requests a graceful restart.
 func (i *BinaryInstaller) Install(source io.Reader) error {
 	if !i.IsSupported() {
 		return ErrUploadedBinaryUnsupported
@@ -183,26 +182,6 @@ func extractLinuxBinaryFromArchive(archivePath, destinationDir string, mode os.F
 	}
 
 	return "", errors.New("release archive does not contain a qui binary")
-}
-
-// Restart replaces this process with the installed executable, retaining its PID
-// and command-line arguments so service managers continue to supervise it.
-func (i *BinaryInstaller) Restart() error {
-	i.mu.Lock()
-	if !i.restartPending {
-		i.mu.Unlock()
-		return errors.New("no update is waiting to restart")
-	}
-	i.mu.Unlock()
-
-	if err := restartCurrentProcess(); err != nil {
-		i.mu.Lock()
-		i.restartPending = false
-		i.mu.Unlock()
-		return err
-	}
-
-	return nil
 }
 
 func validateLinuxExecutable(filePath string) error {

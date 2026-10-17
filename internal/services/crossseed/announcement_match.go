@@ -8,6 +8,8 @@ import (
 	"time"
 
 	qbt "github.com/autobrr/go-qbittorrent"
+
+	"github.com/autobrr/qui/internal/models"
 )
 
 // announceAliasLookupTimeout bounds the ARR alias lookup on announce paths.
@@ -25,6 +27,9 @@ type announcementMatchPolicy struct {
 	// attach to the candidate side only, so they can never widen the identity
 	// of an unrelated source torrent.
 	candidateTitles []string
+	// episodeMap is the Sonarr triple for the announced release, resolved with
+	// the alias titles.
+	episodeMap *models.EpisodeMap
 	// tolerateOneSidedChecksum lets the advisory webhook check pass a candidate
 	// whose only strict failure is a CRC tag on one side. IRC announce sizes are
 	// rounded, so the check cannot reach the exact-size checksum relaxation that
@@ -61,7 +66,7 @@ func (s *Service) classifyAnnouncementSource(
 
 	sourceView := s.deriveSearchSourceRelease(ctx, instanceID, source, rawInput.Source.release)
 	rawInput.Source = sourceView
-	decision := s.classifySearchCandidate(rawInput)
+	decision := s.matcher().classifySearchCandidate(rawInput)
 	return announcementCandidateDecision{decision: decision, replayable: true}
 }
 
@@ -82,11 +87,11 @@ func (s *Service) classifyWebhookAnnouncementSource(
 	}
 
 	input := s.announcementRawSearchInput(source, candidate, candidateSize, policy)
-	decision := s.classifySearchCandidate(input)
+	decision := s.matcher().classifySearchCandidate(input)
 	if policy.tolerateOneSidedChecksum && decision.RejectReason == checksumMismatchReason &&
-		s.hasOneSidedChecksum(input.Source.release, input.Candidate.release) {
-		relaxed, _ := s.withRelaxedDifferenceNeutralized(input, "checksum")
-		decision = s.classifySearchCandidate(relaxed)
+		s.matcher().hasOneSidedChecksum(input.Source.release, input.Candidate.release) {
+		relaxed, _ := s.matcher().withRelaxedDifferenceNeutralized(input, "checksum")
+		decision = s.matcher().classifySearchCandidate(relaxed)
 	}
 	if decision.Accepted && decision.Class != searchCandidateClassStrict {
 		decision.Accepted = false
@@ -96,15 +101,16 @@ func (s *Service) classifyWebhookAnnouncementSource(
 	return announcementCandidateDecision{decision: decision, replayable: true}
 }
 
-// announceAliasTitles resolves ARR alternate titles for an announced release.
-// Callers run it once per announce, outside the per-torrent scan loops.
-func (s *Service) announceAliasTitles(ctx context.Context, announcedName, contentType string) []string {
+// announceAliasTitles resolves ARR alternate titles and the episode map for an
+// announced release. Callers run it once per announce, outside the per-torrent
+// scan loops.
+func (s *Service) announceAliasTitles(ctx context.Context, announcedName, contentType string) ([]string, *models.EpisodeMap) {
 	ctx, cancel := context.WithTimeout(ctx, announceAliasLookupTimeout)
 	defer cancel()
 	if arrResult, _ := s.lookupARRExternalIDs(ctx, announcedName, contentType); arrResult != nil {
-		return arrResult.Titles
+		return arrResult.Titles, arrResult.EpisodeMap
 	}
-	return nil
+	return nil, nil
 }
 
 func (s *Service) announcementRawSearchInput(source *qbt.Torrent, candidate namedRelease, candidateSize int64, policy announcementMatchPolicy) searchCandidateInput {
@@ -115,6 +121,7 @@ func (s *Service) announcementRawSearchInput(source *qbt.Torrent, candidate name
 		SourceSize:             searchSourceSize(source),
 		CandidateSize:          candidateSize,
 		CandidateTitles:        policy.candidateTitles,
+		EpisodeMap:             policy.episodeMap,
 		TolerancePercent:       defaultSizeMismatchTolerancePercent,
 		FindIndividualEpisodes: policy.findIndividualEpisodes,
 		RescueTitleMismatches:  policy.rescueTitleMismatches,
@@ -125,7 +132,7 @@ func (s *Service) classifyUnknownSizePreflight(input searchCandidateInput, skipR
 	input.CandidateSize = input.SourceSize
 	input.RescueTitleMismatches = false
 	input = s.normalizeUnknownSizePreflightIdentity(input)
-	decision := s.classifySearchCandidate(input)
+	decision := s.matcher().classifySearchCandidate(input)
 	if !allowsUnknownSizePreflight(decision, skipRecheck) {
 		decision.Accepted = false
 		decision.Class = searchCandidateClassRejected

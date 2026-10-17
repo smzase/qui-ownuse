@@ -1,12 +1,15 @@
 ---
 sidebar_position: 1
-title: Cross-Seed
+title: Cross-seed for qBittorrent
+sidebar_label: Cross-Seed
 description: Automatically cross-seed torrents across trackers.
 ---
 
 # Cross-Seed Overview
 
 qui finds torrents on other trackers that match content you already seed. It adds them to your qBittorrent instances, so you seed the same content on more than one tracker.
+
+qui cross-seed is a complete setup on its own. It needs no other cross-seeding tool. If you move from one, the torrents it added stay in the client, and qui skips any infohash that is already in the instance. See [Move from standalone cross-seed](./standalone-cross-seed.md).
 
 ## How It Works
 
@@ -46,7 +49,7 @@ qui provides several ways to find cross-seed opportunities:
 
 ### RSS Automation
 
-qui polls tracker RSS feeds on a schedule. Configure this in the **Auto** tab on the Cross-Seed page.
+qui polls tracker RSS feeds on a schedule. Configure this in the **RSS** tab on the Cross-Seed page. The tab holds every RSS setting: the schedule, the target instances and indexers, the source filters, the tags for added torrents, the auto-resume switch, and the recent runs.
 
 - **Run interval**: How often qui polls the feeds (minimum 30 minutes)
 - **Target instances**: The qBittorrent instances that receive cross-seeds
@@ -60,7 +63,7 @@ qui makes this comparison before it downloads the intended torrent file. RSS doe
 
 ### Library Scan
 
-Library Scan searches other trackers for torrents you already seed. Configure it in the **Scan** tab.
+Library Scan searches other trackers for torrents you already seed. Configure it in the **Library** tab. **Save** stores the settings without a run. **Start** stores them and starts a run.
 
 - **Source instance**: The qBittorrent instance to scan
 - **Categories/Tags**: Filter which torrents to include
@@ -68,13 +71,21 @@ Library Scan searches other trackers for torrents you already seed. Configure it
 - **Cooldown**: qui skips torrents that it searched within this window (minimum 12 hours). qui records a Torznab cooldown after an indexer completes its search. If you enable Gazelle, qui records a cooldown when it sends a lookup or local checks find nothing to look up. If the search fails before a lookup, qui can try the torrent in the next run.
 - **Skip individual episodes**: The run does not search single TV episodes. If [automatic assembly](./season-packs.md#automatic-assembly) is on, groups of episodes still start season pack searches.
 
+#### What the scan card counts
+
+The unit of a run is a search candidate: one source torrent, or one season group that season pack automation formed from episodes you seed.
+
+- **Progress**: Processed candidates out of the due candidates. A due candidate still needs a search. Cooldown and per-indexer search history retire candidates, so the same filters give a smaller total on each later run. The total is not the size of your library.
+- **Results**: Each processed candidate lands in one bucket: with cross-seeds, skipped, or failed. The three buckets add up to the processed count when the run completes. A candidate with one added cross-seed and one failed apply counts as with cross-seeds. The failed apply stays in the run details.
+- **Cross-seeds added**: Successful adds into the client. One candidate can add several cross-seeds, so this number can be larger than the candidate count.
+
 :::warning
 Run this sparingly. The scan touches every matching torrent and queries Torznab and/or Gazelle for each one. Use RSS automation or autobrr for routine coverage. Reserve Library Scan for occasional catch-up passes.
 :::
 
 ### Auto-Search on Completion
 
-When a torrent finishes downloading, qui starts a cross-seed search. Configure this in the **Auto** tab under "Auto-search on completion".
+When a torrent finishes downloading, qui starts a cross-seed search. Configure this in the **Completion** tab. The **On completion** card holds the tags and the auto-resume switch. The per-instance card below it turns the search on and sets its filters.
 
 - **Categories/Tags**: Filter which completed torrents trigger searches
 - **Target indexers**: Limit completion searches to specific indexers (empty means all enabled)
@@ -103,6 +114,8 @@ RSS uses the same classifier with its feed title and byte count. The [autobrr in
 
 Announce matching over alternate titles, such as an anime announced under its English or romaji name, needs a [Sonarr or Radarr integration](../search.md#sonarr-and-radarr-integrations). Without one, qui matches announces on the release name only.
 
+Sonarr also maps a single anime episode between numbering schemes. When Sonarr names exactly one episode for a release, qui reads its season, episode, and absolute number, and stores the map with the cached IDs. A search for an absolute-numbered episode (`Show - 81`) then asks ID-capable indexers for the mapped `S04E15`, and a `S04E15` announce or search result matches a local `Show - 81` file as a strict match, in both directions. The map only adds matches: when a tracker numbers the episode differently from Sonarr, qui treats the pair as an episode mismatch, as before. Season packs are not mapped. See [Season Packs](./season-packs.md#anime-absolute-numbering).
+
 If autobrr has no positive size, qui uses a narrow name-only preflight. This preflight can approve one download, but it cannot approve an add.
 
 ### Manual Match
@@ -116,13 +129,27 @@ Two entry points open the same flow:
 
 qui ranks torrents from the same instance by file-size overlap with the uploaded file. You can also pick any other torrent. A pick with no file overlap shows a warning, but you can proceed.
 
+When the upload parses as a season pack, you can select several episode torrents from the same instance. One selected target uses the existing manual match. If the upload does not parse as a season pack, the dialog permits only one target.
+
+Multiple targets require local filesystem access, hardlink or reflink mode, and a configured link base directory. The dialog shows why assembly is unavailable. Manual assembly works even when season pack automation is off.
+
+The check first selects a complete matching pack alone, if one exists. Otherwise, it suggests the episodes that automatic discovery pairs. You can change the selection or use search to add targets that the proposal list omits. The proposal limit grows with the pack episode count, up to 60 torrents. The dialog reports this limit when it truncates the list.
+
+Before you add the pack, the check shows matched episodes, coverage, missing bytes, rejected targets, and the resolved destination. Coverage uses the episode files in your upload. No coverage threshold applies to manual assembly. Each selected torrent must be complete and provide one playable episode file with an exact size match. Manual selection bypasses title, source-filter, and numbering-scheme checks, but each file still needs a parsed episode identity.
+
+Piece boundary protection also applies to manual assembly in hardlink mode. It blocks the pack when selected and missing files share a data block. Downloading that block can change the original files through hardlinks. The warning links to Cross-Seed > Matching rules, where you can review this protection under Safety & validation.
+
+qui adds the assembled pack paused and rechecks it. It resumes when verified progress reaches the linked byte fraction, with the assembly margin for piece boundaries. If a file moves between check and apply, qui drops that target, reports its name, and assembles the remaining files. Season pack run history records the matched count, coverage, and link mode.
+
 A manual selection bypasses candidate discovery and the category and content-type gates. Link mode per instance settings and tag and category treatment stay the same as the automatic pipeline. Every manual match runs a full recheck before it seeds; you cannot skip it, and it decides a wrong pick. A failed recheck leaves the torrent paused for manual review.
 
-The dialog prefills the category from the target torrent and the tags from the cross-seed tag settings. You can edit both. If **Use Custom Category** is on, every cross-seed goes to that one category. The dialog then shows the category and locks it. The save path shows the effective destination and is read-only. With **By Tracker** directory organization, the tracker folder comes from the announce URL in the uploaded file. The tracker does not need a configured indexer.
+For one selected target, the dialog prefills the category from that torrent and the tags from the cross-seed tag settings. You can edit both. If **Use Custom Category** is on, every cross-seed goes to that one category. The dialog then shows the category and locks it. The save path shows the effective destination and is read-only. With **By Tracker** directory organization, the tracker folder comes from the announce URL in the uploaded file. The tracker does not need a configured indexer.
+
+For multiple targets, season pack category routing supplies the initial category. Your category and tag choices control the add. qui does not append the automatic season pack tags. The destination uses the selected episode files and the instance link directory preset.
 
 ### Season Pack Assembly
 
-qui can assemble season-pack torrents from individual episodes you already seed. When autobrr announces a season pack, qui checks your qBittorrent instances for matching episodes. RSS automation, a cross-seed apply, and Library Scan can also start this flow when you seed only episodes of a pack. qui links the episodes that exist locally. When coverage passes the configured threshold (default 75%), qui adds the pack and qBittorrent downloads the remainder after a recheck. When available, Sonarr, TVDB, and TVMaze improve the threshold decision. This feature requires local filesystem access and hardlink or reflink mode. See [Season Packs](./season-packs.md) for setup.
+qui can assemble season-pack torrents from individual episodes you already seed. To use automatic assembly, first enable **Assemble season packs automatically** in the settings; it is disabled by default. When autobrr announces a season pack, qui checks your qBittorrent instances for matching episodes. RSS automation, a cross-seed apply, and Library Scan can also start this flow when you seed only episodes of a pack. qui links the episodes that exist locally. When coverage passes the configured threshold (default 75%), qui adds the pack and qBittorrent downloads the remainder after a recheck. When available, Sonarr, TVDB, and TVMaze improve the threshold decision. This feature requires local filesystem access and hardlink or reflink mode. See [Season Packs](./season-packs.md) for setup.
 
 ## Blocklist
 
@@ -130,5 +157,15 @@ Use the per-instance blocklist to stop qui from injecting specific infohashes ag
 
 - **Manage**: Cross-Seed page → Blocklist tab
 - **Quick add**: Delete dialog checkbox (appears only for torrents tagged `cross-seed`)
+
+The blocklist applies to these add paths:
+
+- Cross-seed applies from search, RSS, completion, autobrr, and a manual match with one target
+- [Dir Scan](./dir-scan.md)
+- Season pack assembly from the [apply webhook](./season-packs.md#4-configure-the-apply-action) and from [automatic assembly](./season-packs.md#automatic-assembly)
+
+An entry blocks the infohash only on its own instance. Season pack assembly can still use another eligible instance that has no entry.
+
+A [manual assembly](#manual-match) from several selected episodes ignores the blocklist, because you select that pack yourself.
 
 The delete dialog also detects cross-seeds that the deletion affects. This includes [hardlinked copies and ReFS block clones](./hardlink-mode.md#deleting-hardlinked-cross-seeds) on instances with local filesystem access.

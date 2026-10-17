@@ -1,12 +1,13 @@
 ---
 sidebar_position: 14
-title: Torrent Management
-description: Tags, categories, saved filter views, keyboard control, torrent creation, export, and MediaInfo.
+title: Manage torrents in qui
+sidebar_label: Torrent Management
+description: Tags, categories, tracker URLs, saved filter views, keyboard control, table columns, torrent creation, export, MediaInfo, and BDInfo reports.
 ---
 
 # Torrent Management
 
-qui provides tools to manage torrent lists: tags, categories, saved filter views, keyboard control, a torrent creator, `.torrent` export, and MediaInfo. For queue, speed, and share limits, see [qBittorrent Preferences](./instance-settings.md#qbittorrent-preferences).
+qui provides tools to manage torrent lists: tags, categories, tracker URLs, saved filter views, keyboard control, table columns, a torrent creator, `.torrent` export, MediaInfo, and BDInfo Disc reports. For queue, speed, and share limits, see [qBittorrent Preferences](./instance-settings.md#qbittorrent-preferences).
 
 ## Tags and categories
 
@@ -24,6 +25,40 @@ Manage tags and categories from the **Tags** and **Categories** sections in the 
 ### Subcategories
 
 qBittorrent stores a subcategory as a name with `/` separators, for example `media/movies`. qui shows the categories as a collapsible tree sorted by name when the instance supports subcategories (qBittorrent WebUI API 2.9.0 or newer). The qBittorrent preference **Enable Subcategories** (Instance Preferences > Files) must also be on. From WebUI API 2.15.0, subcategories are always on. In other cases, qui shows a flat list.
+
+## Exclude a filter
+
+Click a status, category, tag, or tracker in the filter sidebar to show only the torrents that match it. Ctrl+click the same item (Cmd+click on macOS) to exclude it instead. The list then shows the torrents that do not match. On a touch screen, press and hold the item for the same result. Click it again to clear the exclusion.
+
+## Clear filters
+
+Click **Clear filters** at the top of the filter sidebar to remove sidebar and column filters. The button appears when either group has active filters. Search text and sorting stay unchanged.
+
+Open the arrow menu beside the button for these actions:
+
+- **Clear sidebar filters** keeps column filters and search text.
+- **Clear column filters** keeps sidebar filters and search text.
+- **Clear filters and search** removes both filter groups and search text.
+
+Each action keeps the current sort order. The table toolbar's clear button removes column filters only.
+
+## Change a tracker URL
+
+Use this when a tracker resets your passkey or changes its announce address.
+
+1. In the **Trackers** section of the filter sidebar, open the context menu on the tracker.
+2. Click **Edit tracker URL**. If the entry groups more than one domain, select the domain.
+3. Check **Current Full Tracker URL**. On qBittorrent 5.1 or newer, qui fills it in from your torrents. If your torrents use more than one URL for this tracker, select the one to replace. On older versions, enter the complete current URL yourself.
+4. Enter the complete new URL, with the new passkey, in **New Full Tracker URL**.
+5. Click **Update Tracker**.
+
+qui replaces the URL on every torrent of the instance that has exactly the current URL. To change the URL of one torrent only, open the **Trackers** tab in its details panel and open the context menu on the tracker. On qBittorrent 5.1 or newer, if the tracker has `http://` URLs, the dialog also shows **Convert all HTTP to HTTPS**, which changes them to `https://`.
+
+The menu entry is gray when the instance is read-only or qBittorrent is older than 4.1.5.
+
+:::warning
+If an automation removes unregistered torrents, disable it before you change the URL. Until the tracker accepts the new passkey, qBittorrent can report every torrent of that tracker as unregistered, and the automation then removes all of them. Enable the automation again when the torrents show a working tracker status.
+:::
 
 ## Saved filter views
 
@@ -55,13 +90,21 @@ A view stores the sidebar filter selection only. It does not include search text
 
 The arrow keys replace the selection with the focused row, the same as a plain click. When the details panel is open, it follows the arrow keys. If you type in an input field or open a dialog, hotkeys are inactive.
 
+## Table columns
+
+**Toggle columns** in the table toolbar shows or hides columns. Drag the handle next to a column in that menu to change its position, or drag a column header directly.
+
+Drag the edge of a column header to change the width of that column. The button next to **Toggle columns** decides how the Name column gets its width.
+
+Stretch mode is the default. In stretch mode, the Name column takes the width that the other columns leave, so the table fills the window. You cannot resize the Name column in stretch mode. In scroll mode, you set the width of the Name column, and the table scrolls sideways when the columns do not fit. If the visible columns leave no room for the Name column, qui scrolls anyway and the button turns gray until you hide a column. qui remembers the choice for each instance.
+
 ## Torrent creator
 
 The **Create torrent** button opens the creator dialog. On desktop it is in the header. On phones it is the **Create** button in the bottom bar. It creates a new `.torrent` file from a file or folder on the qBittorrent server. The button appears only when the instance supports torrent creation, which requires qBittorrent 5.0 or newer (WebUI API 2.11.2).
 
 | Field | Description | Default |
 |-------|-------------|---------|
-| Source Path | Full path on the qBittorrent server. Suggestions appear as you type. | Required |
+| Source Path | Full path to a file or folder on the qBittorrent server. Folders and files appear as suggestions while you type. | Required |
 | Private torrent | Disables DHT, PEX, and local peer discovery | On |
 | Trackers | Pick from active trackers or enter one URL per line | - |
 | Comment | Free-text comment stored in the torrent | - |
@@ -80,7 +123,7 @@ Hybrid and v2 formats require a qBittorrent build with libtorrent 2. On a libtor
 
 ### Creation tasks
 
-The **Torrent Creation Tasks** list in the header shows every creation job with its status: Queued, Running, Finished, or Failed. Running tasks show a progress bar. While tasks run, the list refreshes every 2 seconds. From a finished task, you can download the `.torrent` file or delete the task.
+The **Torrent Creation Tasks** list in the header shows every creation job with its status: Queued, Running, Finished, or Failed. Running tasks show a progress bar. While tasks run, the list refreshes every 2 seconds. From a finished task, you can download the `.torrent` file or delete the task. If the download fails with the qBittorrent option **Delete .torrent files afterwards** enabled, see [Troubleshooting](../advanced/compatibility.md#download-of-a-created-torrent-fails-with-failed-to-download-torrent-file).
 
 ## Torrent export
 
@@ -90,8 +133,26 @@ Up to 10 torrents download as individual files. Larger selections download as on
 
 If some torrents fail to export, the archive still downloads. An `export-errors.txt` file inside the archive lists the failures.
 
+## Content tab sorting
+
+The **Content** tab of the details panel shows the files of a torrent as a folder tree. Click a column header (**Name**, **Progress**, **Size**, or **Priority**) to sort the rows by that column. Click the same header again to reverse the direction. The narrow layout shows the same four choices as a row of buttons above the file list.
+
+Folders always stay above files. A folder sorts by the total of its files. The **Priority** column appears only when the instance supports per-file priority. The sort resets to **Name** when you reload the page.
+
 ## MediaInfo
 
 The **Content** tab of the details panel offers a **MediaInfo** action on each file. It analyzes the file on disk and opens a dialog with two tabs: **Summary** and **Raw JSON**. **Copy Summary** and **Copy JSON** copy the report to the clipboard.
 
 Because qui reads the file from disk, MediaInfo requires the instance option **Local Filesystem Access**. See [Instance Settings](./instance-settings.md#local-filesystem-access).
+
+## BDInfo
+
+The **Content** tab offers a **BDInfo** action on each Disc in a torrent. A Disc is a folder that holds a `BDMV` folder, or an `.iso` file. A box set gets one action per Disc. DVD folders (`VIDEO_TS`) are not supported.
+
+The first click starts a scan with [go-bdinfo](https://github.com/autobrr/go-bdinfo) and opens a dialog. The scan runs in the background, so you can close the dialog or leave the page. qui shows a toast when the scan finishes. Scans run one at a time in the order you start them. The dialog shows the queue position of a waiting scan, the progress of a running scan, and a **Cancel scan** button for both.
+
+A finished scan opens a dialog with two tabs: **Quick Summary** and **Forum**. The Forum tab holds the BBCode block for tracker upload forms. Each tab has a copy button. The report covers the main playlist only.
+
+qui keeps the report, so a second visit to the same Disc opens it at once. Two torrents on one instance that point at the same Disc share one report. **Rescan** replaces the stored report with a new scan. A scan that was running when qui restarted shows as failed; use **Rescan** to run it again.
+
+Because qui reads the Disc from disk, BDInfo requires the instance option **Local Filesystem Access**. See [Instance Settings](./instance-settings.md#local-filesystem-access).

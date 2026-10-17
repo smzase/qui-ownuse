@@ -333,27 +333,6 @@ func TestAdaptiveSearchTimeoutScalesWithIndexerCount(t *testing.T) {
 	}
 }
 
-func TestComputeSearchTimeoutExcludesQueueWait(t *testing.T) {
-	t.Parallel()
-
-	prowlarr := []*models.TorznabIndexer{{Backend: models.TorznabBackendProwlarr}}
-	native := []*models.TorznabIndexer{{Backend: models.TorznabBackendNative}}
-	mixed := []*models.TorznabIndexer{
-		{Backend: models.TorznabBackendProwlarr},
-		{Backend: models.TorznabBackendNative},
-	}
-
-	if got := computeSearchTimeout(prowlarr); got != timeouts.DefaultSearchTimeout {
-		t.Fatalf("Prowlarr timeout = %s, want %s", got, timeouts.DefaultSearchTimeout)
-	}
-	if got, want := computeSearchTimeout(native), timeouts.DefaultSearchTimeout; got != want {
-		t.Fatalf("native timeout = %s, want %s", got, want)
-	}
-	if got, want := computeSearchTimeout(mixed), timeouts.DefaultSearchTimeout+timeouts.PerIndexerSearchTimeout; got != want {
-		t.Fatalf("mixed timeout = %s, want %s", got, want)
-	}
-}
-
 func TestGetActivityStatusMergesCooldownScopes(t *testing.T) {
 	store := &mockTorznabIndexerStore{indexers: []*models.TorznabIndexer{{ID: 1, Name: "IndexerOne"}}}
 	service := NewService(store)
@@ -1088,6 +1067,20 @@ func TestBuildSearchParams(t *testing.T) {
 				"season": "1",
 				"ep":     "1",
 				"limit":  "50",
+			},
+		},
+		{
+			name: "seasonless absolute episode omits ep",
+			req: &TorznabSearchRequest{
+				Query:   "Re Start Isekai Life",
+				TVDbID:  "305089",
+				Episode: new(81),
+			},
+			searchMode: "tvsearch",
+			expected: map[string]string{
+				"t":      "tvsearch",
+				"q":      "Re Start Isekai Life",
+				"tvdbid": "305089",
 			},
 		},
 		{

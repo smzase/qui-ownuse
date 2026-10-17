@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+import { useSyncStream } from "@/contexts/SyncStreamContext"
+import type { TorrentStreamPayload } from "@/types"
+import { isStreamUsable } from "@/lib/sync-stream-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,32 +19,34 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useDateTimeFormatters } from "@/hooks/useDateTimeFormatters"
+import { useDiscScans } from "@/hooks/useDiscScans"
 import { useInstanceCapabilities } from "@/hooks/useInstanceCapabilities"
-import { useInstanceMetadata } from "@/hooks/useInstanceMetadata"
 import { usePersistedTabState } from "@/hooks/usePersistedTabState"
+import { useQueueLimits } from "@/hooks/usePreferenceValues"
 import { scheduleTorrentListRefetches } from "@/hooks/useTorrentActions"
 import { api } from "@/lib/api"
 import { isHardlinkManaged, useLocalCrossSeedMatches } from "@/lib/cross-seed-utils"
+import { DEFAULT_FILE_SORT } from "@/lib/file-tree"
 import { getLinuxCategory, getLinuxComment, getLinuxCreatedBy, getLinuxFileName, getLinuxHash, getLinuxIsoName, getLinuxSavePath, getLinuxTags, getLinuxTracker, useIncognitoMode } from "@/lib/incognito"
 import { renderTextWithLinks } from "@/lib/linkUtils"
 import { formatSpeedWithUnit, useSpeedUnits } from "@/lib/speedUnits"
 import { canBanPeer, getPeerDisplayAddress } from "@/lib/torrent-peer-address"
 import { getPeerFlagDetails } from "@/lib/torrent-peer-flags"
 import { getStateLabel } from "@/lib/torrent-state-utils"
-import { resolveTorrentHashes } from "@/lib/torrent-utils"
+import { resolveStreamRow, resolveTorrentHashes } from "@/lib/torrent-utils"
 import { getTrackerStatusBadge } from "@/lib/tracker-utils"
 import { cn, copyTextToClipboard, formatBytes, formatDuration } from "@/lib/utils"
 import type { SortedPeer, SortedPeersResponse, Torrent, TorrentFile, TorrentFilters, TorrentTracker } from "@/types"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import "flag-icons/css/flag-icons.min.css"
 import { Ban, ChevronDown, ChevronUp, Copy, Loader2, Trash2, UserPlus, X } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { CrossSeedTable, GeneralTabHorizontal, PeersTable, TorrentFileTable, TrackerContextMenu, TrackersTable, WebSeedsTable } from "./details"
 import { EditTrackerDialog, RenameTorrentFileDialog, RenameTorrentFolderDialog } from "./TorrentDialogs"
+import { TorrentDiscReportDialog } from "./TorrentDiscReportDialog"
 import { TorrentFileMediaInfoDialog } from "./TorrentFileMediaInfoDialog"
-import { TorrentFileTree } from "./TorrentFileTree"
+import { TorrentFileSortBar, TorrentFileTree } from "./TorrentFileTree"
 
 interface TorrentDetailsPanelProps {
   instanceId: number;
@@ -87,7 +92,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
   const [peerToBan, setPeerToBan] = useState<SortedPeer | null>(null)
   const isReady = true
   const [isCollapsed, setIsCollapsed] = useState(false)
-  const { data: metadata } = useInstanceMetadata(instanceId)
+  const queueLimits = useQueueLimits(instanceId)
   const { data: capabilities } = useInstanceCapabilities(instanceId)
   const queryClient = useQueryClient()
   const [speedUnit] = useSpeedUnits()
@@ -95,10 +100,11 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
   const displayName = incognitoMode ? getLinuxIsoName(torrent?.hash ?? "") : torrent?.name
   const incognitoHash = incognitoMode && torrent?.hash ? getLinuxHash(torrent.hash) : undefined
   const [pendingFileIndices, setPendingFileIndices] = useState<Set<number>>(() => new Set())
+  const [fileSort, setFileSort] = useState(DEFAULT_FILE_SORT)
   const supportsFilePriority = capabilities?.supportsFilePriority ?? false
   const { data: instances } = useQuery({ queryKey: ["instances"], queryFn: () => api.getInstances(), staleTime: 60000 })
   const instance = instances?.find(i => i.id === instanceId)
-  const hasLocalFilesystemAccess = instance?.hasLocalFilesystemAccess ?? false
+  const canReadContent = instance?.capabilities.content ?? false
   // Transmission exposes peer statistics but not qBittorrent's add/ban peer
   // actions. Unknown instance metadata is treated conservatively.
   const supportsPeerActions = instance?.clientType === "qbittorrent"
@@ -144,7 +150,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
     }
 
     return {
-      expr: `Hash == "${torrent.hash}"`,
+      hashes: [torrent.hash],
       status: [],
       excludeStatus: [],
       categories: [],
@@ -155,6 +161,45 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
       excludeTrackers: [],
     }
   }, [torrent?.hash])
+  const streamParams = useMemo(() => {
+    if (!hashFilter || !isReady) {
+      return null
+    }
+
+    return {
+      instanceId,
+      page: 0,
+      limit: 1,
+      sort: "added_on",
+      order: "desc" as const,
+      filters: hashFilter,
+    }
+  }, [hashFilter, instanceId, isReady])
+  const [streamSnapshot, setStreamSnapshot] = useState<{ instanceId: number; hash: string; torrent: Torrent | null } | null>(null)
+  const handleStreamPayload = useCallback(
+    (payload: TorrentStreamPayload) => {
+      if (!payload?.data || !torrent?.hash) {
+        return
+      }
+
+      const data = payload.data
+      setStreamSnapshot(previous => ({
+        instanceId,
+        hash: torrent.hash,
+        torrent: resolveStreamRow(
+          previous?.instanceId === instanceId && previous.hash === torrent.hash ? previous.torrent : null,
+          data
+        ),
+      }))
+    },
+    [instanceId, torrent?.hash]
+  )
+  const streamState = useSyncStream(streamParams, {
+    enabled: Boolean(streamParams),
+    onMessage: handleStreamPayload,
+  })
+  const streamUsable = isStreamUsable(streamState)
+
   // Fetch torrent properties
   const { data: properties, isLoading: loadingProperties, error: propertiesError } = useQuery({
     queryKey: ["torrent-properties", instanceId, torrent?.hash],
@@ -215,7 +260,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
     gcTime: 5 * 60 * 1000,
   })
 
-  const shouldUseFallbackPolling = !!torrent && isReady
+  const shouldUseFallbackPolling = !!torrent && isReady && !streamUsable
 
   // REST polling for live row state (speeds, progress, etc.)
   const { data: polledLiveTorrent } = useQuery({
@@ -233,7 +278,10 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
   })
 
   // Merge live data with prop, preferring live values for frequently-changing fields
-  const liveTorrent = polledLiveTorrent ?? null
+  const streamTorrent = streamUsable && streamSnapshot?.instanceId === instanceId && streamSnapshot.hash === torrent?.hash
+    ? streamSnapshot.torrent
+    : null
+  const liveTorrent = streamTorrent ?? polledLiveTorrent ?? null
   const displayTorrent = useMemo(() => {
     if (!torrent) return null
     if (!liveTorrent) return torrent
@@ -685,7 +733,6 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
 
       toast.success(t("detailsPanel.toast.deletedTorrents", {
         count: torrentsToDelete.length,
-        plural: torrentsToDelete.length > 1 ? "s" : "",
       }))
 
       // An immediate refetch can race the backend's debounced post-delete sync
@@ -769,6 +816,18 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
       setMediaInfoTorrentHash(null)
     }
   }, [])
+
+  const discScans = useDiscScans(instanceId, torrent?.hash ?? "", files, canReadContent)
+  const [discReportPath, setDiscReportPath] = useState<string | null>(null)
+  const { runsByPath: discRuns, start: { mutate: startDiscScan, reset: resetDiscScan } } = discScans
+  const handleShowDiscReport = useCallback((discPath: string) => {
+    // A Disc with no run, or with a canceled one, starts its scan on the click.
+    // A finished or failed run opens as it is, and the dialog offers Rescan.
+    resetDiscScan()
+    const status = discRuns.get(discPath)?.status
+    if (status === undefined || status === "canceled") startDiscScan({ discPath, force: false })
+    setDiscReportPath(discPath)
+  }, [discRuns, startDiscScan, resetDiscScan])
 
   // Handle rename folder
   const handleRenameFolderConfirm = useCallback(({ oldPath, newPath }: { oldPath: string; newPath: string }) => {
@@ -914,7 +973,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                 displayInfohashV2={displayInfohashV2}
                 displayComment={displayComment}
                 displayCreatedBy={displayCreatedBy}
-                queueingEnabled={metadata?.preferences?.queueing_enabled}
+                queueingEnabled={queueLimits.enabled}
               />
             ) : (
               <ScrollArea className="h-full">
@@ -1114,7 +1173,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                         </div>
                       </div>
 
-                      {metadata?.preferences?.queueing_enabled && (
+                      {queueLimits.enabled && (
                         <div className="space-y-3">
                           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("detailsPanel.sections.queueManagement")}</h3>
                           <div className="bg-card/50 backdrop-blur-sm rounded-lg p-4 border border-border/50 space-y-3">
@@ -1131,28 +1190,28 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                                 )}
                               </div>
                             </div>
-                            {(metadata.preferences.max_active_downloads > 0 ||
-                              metadata.preferences.max_active_uploads > 0 ||
-                              metadata.preferences.max_active_torrents > 0) && (
+                            {(queueLimits.maxActiveDownloads > 0 ||
+                              queueLimits.maxActiveUploads > 0 ||
+                              queueLimits.maxActiveTorrents > 0) && (
                               <>
                                 <Separator className="opacity-50" />
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                                  {metadata.preferences.max_active_downloads > 0 && (
+                                  {queueLimits.maxActiveDownloads > 0 && (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground">{t("detailsPanel.labels.maxDownloads")}</p>
-                                      <p className="font-medium">{metadata.preferences.max_active_downloads}</p>
+                                      <p className="font-medium">{queueLimits.maxActiveDownloads}</p>
                                     </div>
                                   )}
-                                  {metadata.preferences.max_active_uploads > 0 && (
+                                  {queueLimits.maxActiveUploads > 0 && (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground">{t("detailsPanel.labels.maxUploads")}</p>
-                                      <p className="font-medium">{metadata.preferences.max_active_uploads}</p>
+                                      <p className="font-medium">{queueLimits.maxActiveUploads}</p>
                                     </div>
                                   )}
-                                  {metadata.preferences.max_active_torrents > 0 && (
+                                  {queueLimits.maxActiveTorrents > 0 && (
                                     <div className="space-y-1">
                                       <p className="text-muted-foreground">{t("detailsPanel.labels.maxActive")}</p>
-                                      <p className="font-medium">{metadata.preferences.max_active_torrents}</p>
+                                      <p className="font-medium">{queueLimits.maxActiveTorrents}</p>
                                     </div>
                                   )}
                                 </div>
@@ -1569,7 +1628,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                   ) : webseedsData && webseedsData.length > 0 ? (
                     <div className="space-y-3">
                       <div>
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("webSeedsTable.httpSources", { count: webseedsData.length, plural: webseedsData.length === 1 ? "" : "s" })}</h3>
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("webSeedsTable.httpSources", { count: webseedsData.length })}</h3>
                         <p className="text-xs text-muted-foreground mt-1">{t("detailsPanel.counts.httpSources", { count: webseedsData.length })}</p>
                       </div>
                       <div className="space-y-2 mt-4">
@@ -1627,8 +1686,10 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                 onSetFolderPriority={handleSetFolderPriority}
                 onRenameFile={handleRenameFileClick}
                 onRenameFolder={(folderPath) => { void handleRenameFolderDialogOpen(folderPath) }}
-                onDownloadFile={hasLocalFilesystemAccess ? handleDownloadFile : undefined}
-                onShowMediaInfo={hasLocalFilesystemAccess ? handleShowMediaInfo : undefined}
+                onDownloadFile={canReadContent ? handleDownloadFile : undefined}
+                onShowMediaInfo={canReadContent ? handleShowMediaInfo : undefined}
+                discScans={discScans.runsByPath}
+                onShowDiscReport={canReadContent ? handleShowDiscReport : undefined}
               />
             ) : activeTab === "content" && loadingFiles && !files ? (
               <div className="flex items-center justify-center p-8 flex-1">
@@ -1668,11 +1729,13 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                     )}
                   </div>
                 </div>
+                <TorrentFileSortBar sort={fileSort} supportsFilePriority={supportsFilePriority} onSortChange={setFileSort} />
                 <ScrollArea className="flex-1 min-h-0 w-full [&>[data-slot=scroll-area-viewport]]:!overflow-x-hidden">
                   <div className="p-4 sm:p-6 pb-8">
                     <TorrentFileTree
                       key={torrent.hash}
                       files={files}
+                      sort={fileSort}
                       supportsFilePriority={supportsFilePriority}
                       pendingFileIndices={pendingFileIndices}
                       incognitoMode={incognitoMode}
@@ -1685,8 +1748,10 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                       onSetFolderPriority={handleSetFolderPriority}
                       onRenameFile={handleRenameFileClick}
                       onRenameFolder={(folderPath) => { void handleRenameFolderDialogOpen(folderPath) }}
-                      onDownloadFile={hasLocalFilesystemAccess ? handleDownloadFile : undefined}
-                      onShowMediaInfo={hasLocalFilesystemAccess ? handleShowMediaInfo : undefined}
+                      onDownloadFile={canReadContent ? handleDownloadFile : undefined}
+                      onShowMediaInfo={canReadContent ? handleShowMediaInfo : undefined}
+                      discScans={discScans.runsByPath}
+                      onShowDiscReport={canReadContent ? handleShowDiscReport : undefined}
                     />
                   </div>
                 </ScrollArea>
@@ -2178,6 +2243,12 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
         instanceId={instanceId}
         torrentHash={mediaInfoTorrentHash ?? ""}
         file={mediaInfoFile}
+      />
+
+      <TorrentDiscReportDialog
+        discPath={discReportPath}
+        onClose={() => setDiscReportPath(null)}
+        scans={discScans}
       />
     </div>
   )

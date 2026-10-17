@@ -5,31 +5,41 @@
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
+import { endsWithSeparator, lastSeparatorIndex, pathSeparator } from "@/lib/paths";
+
 import { useDirectoryContent } from "./useDirectoryContent";
+
+const MAX_SUGGESTIONS = 100;
+
+type UsePathAutocompleteOptions = {
+  /** Also list files; a selected file closes the dropdown instead of descending into it. */
+  includeFiles?: boolean;
+};
 
 export function usePathAutocomplete(
   onSuggestionSelect: (path: string) => void,
-  instanceId: number
+  instanceId: number,
+  { includeFiles = false }: UsePathAutocompleteOptions = {}
 ) {
   const [inputValue, setInputValue] = useState("");
   const deferredInput = useDeferredValue(inputValue);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const [dismissed, setDismissed] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const skipHighlightResetRef = useRef(false);
 
   const getParentPath = useCallback((path: string) => {
     if (!path || path.trim() === "/") return "/";
-    if (path.endsWith("/")) return path;
-    const lastSlash = path.lastIndexOf("/");
-    if (lastSlash === -1) return "/";
-    return lastSlash === 0 ? "/" : path.slice(0, lastSlash + 1);
+    if (endsWithSeparator(path)) return path;
+    const lastSeparator = lastSeparatorIndex(path);
+    if (lastSeparator === -1) return "/";
+    return lastSeparator === 0 ? "/" : path.slice(0, lastSeparator + 1);
   }, []);
 
   const getFilterTerm = useCallback((path: string) => {
-    if (!path || path.endsWith("/")) return "";
-    const lastSlash = path.lastIndexOf("/");
-    return path.slice(lastSlash + 1);
+    if (!path || endsWithSeparator(path)) return "";
+    return path.slice(lastSeparatorIndex(path) + 1);
   }, []);
 
   const parentPath = useMemo(
@@ -42,16 +52,23 @@ export function usePathAutocomplete(
     [deferredInput, getFilterTerm]
   );
 
-  const { data: directoryEntries = [] } = useDirectoryContent(instanceId, parentPath, {
-    enabled: Boolean(deferredInput?.trim()),
-    staleTimeMs: 30000,
+  const enabled = Boolean(deferredInput?.trim());
+  const { data: directoryEntries = [] } = useDirectoryContent(instanceId, parentPath, { enabled });
+  // Second query instead of mode=all with metadata: it works on qBittorrent 5.0
+  // and returns full paths, while withMetadata needs 5.2 and returns basenames.
+  const { data: fileEntries = [] } = useDirectoryContent(instanceId, parentPath, {
+    enabled: includeFiles && enabled,
+    mode: "files",
   });
 
+  // Capped: a flat directory with thousands of files would render one button per entry.
   const suggestions = useMemo(() => {
-    if (!directoryEntries.length) return [];
-    if (!filterTerm) return directoryEntries;
-    return directoryEntries.filter((e) => e.toLowerCase().includes(filterTerm));
-  }, [directoryEntries, filterTerm]);
+    const entries = includeFiles ? [...directoryEntries, ...fileEntries] : directoryEntries;
+    const matches = filterTerm
+      ? entries.filter((e) => e.slice(lastSeparatorIndex(e) + 1).toLowerCase().startsWith(filterTerm))
+      : entries;
+    return matches.slice(0, MAX_SUGGESTIONS);
+  }, [directoryEntries, fileEntries, includeFiles, filterTerm]);
 
   // Update highlighted index when suggestions change
   useEffect(() => {
@@ -66,18 +83,18 @@ export function usePathAutocomplete(
     setHighlightedIndex(suggestions.length > 0 ? 0 : -1);
   }, [suggestions, dismissed]);
 
-  /** Selects a directory entry, appends a trailing slash, and keeps the dropdown open for subdirectory navigation. */
+  /** Selects an entry. A directory gets a trailing separator and keeps the dropdown open for the next level; a file closes it. */
   const selectSuggestion = useCallback(
     (entry: string) => {
-      const separator = entry.includes("\\") || /^[a-zA-Z]:/.test(entry) ? "\\" : "/";
-      const pathWithSeparator = (entry.endsWith("/") || entry.endsWith("\\")) ? entry : entry + separator;
-      setInputValue(pathWithSeparator);
-      onSuggestionSelect(pathWithSeparator);
-      setDismissed(false);
+      const isFile = fileEntries.includes(entry);
+      const path = isFile || endsWithSeparator(entry) ? entry : entry + pathSeparator(entry);
+      setInputValue(path);
+      onSuggestionSelect(path);
+      setDismissed(isFile);
       setHighlightedIndex(-1);
       inputRef.current?.focus();
     },
-    [onSuggestionSelect]
+    [onSuggestionSelect, fileEntries]
   );
 
   const handleKeyDown = useCallback(
@@ -162,7 +179,21 @@ export function usePathAutocomplete(
     !dismissed &&
     suggestions.length > 0 &&
     !(suggestions.length === 1 && suggestions[0] === inputValue) &&
-    !(inputValue.endsWith("/") && suggestions.some((s) => s === inputValue));
+    !(endsWithSeparator(inputValue) && suggestions.some((s) => s === inputValue));
+
+  // Dismiss on any pointer interaction outside the input and the list. Blur
+  // cannot do this because the suggestion buttons prevent it. A pointerdown on
+  // the list itself (for example its scrollbar) keeps it open.
+  useEffect(() => {
+    if (!showSuggestions) return;
+    const onPointerDown = (e: Event) => {
+      const target = e.target as Node;
+      if (inputRef.current?.contains(target) || listRef.current?.contains(target)) return;
+      setDismissed(true);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [showSuggestions]);
 
   return {
     suggestions,
@@ -174,5 +205,6 @@ export function usePathAutocomplete(
     highlightedIndex,
     showSuggestions,
     inputRef,
+    listRef,
   };
 }

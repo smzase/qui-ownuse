@@ -15,7 +15,7 @@
     }
   },
   "managementBar": {
-    "ariaLabel": "已選擇 {{count}} 個種子 - 可進行批次操作",
+    "ariaLabel_other": "已選擇 {{count}} 個種子 - 可進行批次操作",
     "resume": "繼續",
     "pause": "暫停",
     "forceRecheck": "強制重新檢查",
@@ -484,7 +484,6 @@
     "renameFolder": "重新命名資料夾",
     "download": "下載",
     "mediaInfo": "媒體資訊",
-    "toggle": "切換",
     "selectFileForDownload": "選擇檔案以下載",
     "skipFileDownload": "跳過檔案下載",
     "selectAllFilesIn": "選擇 {{name}} 中的所有檔案",
@@ -505,6 +504,31 @@
     "toast": {
       "copied": "{{label}} 已複製到剪貼簿",
       "copyFailed": "複製到剪貼簿失敗"
+    }
+  },
+  "discScan": {
+    "action": "BDInfo",
+    "actionActive": "BDInfo 掃描進行中",
+    "actionReady": "BDInfo 報告已就緒",
+    "actionFailed": "BDInfo 掃描失敗",
+    "quickSummary": "快速摘要",
+    "forum": "論壇",
+    "copyQuickSummary": "複製快速摘要",
+    "copyForum": "複製論壇程式碼區塊",
+    "rescan": "重新掃描",
+    "cancel": "取消掃描",
+    "retry": "重試",
+    "starting": "正在啟動掃描…",
+    "queued": "排隊中，位置 {{position}}",
+    "scanning": "正在掃描 {{processed}} / {{total}}",
+    "scanningUnknown": "正在掃描…",
+    "failed": "掃描失敗",
+    "canceled": "掃描已取消",
+    "toast": {
+      "copied": "{{label}}已複製到剪貼簿",
+      "copyFailed": "複製到剪貼簿失敗",
+      "completed": "BDInfo 報告已就緒",
+      "failed": "BDInfo 掃描失敗：{{error}}"
     }
   },
   "categoryTree": {
@@ -607,22 +631,22 @@
     "deleteEmptyCategories": {
       "title": "移除空分類",
       "noEmpty": "沒有可移除的空分類。",
-      "confirm": "確定要移除 {{count}} 個空分類嗎？此操作無法復原。",
+      "confirm_other": "確定要移除 {{count}} 個空分類嗎？此操作無法復原。",
       "cancel": "取消",
-      "remove": "移除 {{count}} 個分類",
+      "remove_other": "移除 {{count}} 個分類",
       "toast": {
-        "success": "已移除 {{count}} 個空分類",
+        "success_other": "已移除 {{count}} 個空分類",
         "error": "移除空分類失敗"
       }
     },
     "deleteUnusedTags": {
       "title": "刪除未使用的標籤",
       "noUnused": "沒有可刪除的未使用標籤。",
-      "confirm": "確定要刪除 {{count}} 個未使用的標籤嗎？此操作無法復原。",
+      "confirm_other": "確定要刪除 {{count}} 個未使用的標籤嗎？此操作無法復原。",
       "cancel": "取消",
-      "delete": "刪除 {{count}} 個標籤",
+      "delete_other": "刪除 {{count}} 個標籤",
       "toast": {
-        "success": "已刪除 {{count}} 個未使用的標籤",
+        "success_other": "已刪除 {{count}} 個未使用的標籤",
         "error": "刪除未使用的標籤失敗"
       }
     }
@@ -648,7 +672,7 @@
     "contentFilteringInProgress": "內容篩選進行中",
     "analyzingContent": "正在分析現有內容...",
     "smartFilteringActive": "智慧篩選已啟用",
-    "indexersFiltered": "{{count}} 個索引器已篩選",
+    "indexersFiltered_other": "{{count}} 個索引器已篩選",
     "contentFilteringDescription": "正在檢查您現有的種子以查詢重複項並排除冗餘的 Tracker。這有助於避免多次下載相同內容。",
     "excludedDescription": "您已從這些 Tracker 做種此版本，因此它們已被排除在搜尋之外。",
     "noContentDuplicates": "內容篩選完成。在您啟用的 Tracker 上未發現重複內容。",
@@ -740,6 +764,26 @@
     "setConditions": "設定條件以篩選此列",
     "operation": "操作",
     "selectOperation": "選擇操作",
+    "operations": {
+      "equalTo": "等於",
+      "notEqualTo": "不等於",
+      "greaterThan": "大於",
+      "greaterThanOrEqual": "大於或等於",
+      "lessThan": "小於",
+      "lessThanOrEqual": "小於或等於",
+      "between": "介於",
+      "equals": "等於",
+      "notEquals": "不等於",
+      "contains": "包含",
+      "doesNotContain": "不包含",
+      "startsWith": "開頭為",
+      "endsWith": "結尾為",
+      "on": "當天",
+      "after": "晚於",
+      "before": "早於",
+      "is": "是",
+      "isNot": "不是"
+    },
     "value": "值",
     "from": "從",
     "to": "到",
@@ -808,7 +852,10 @@
       }
     },
     "title": "篩選器",
-    "clearAll": "全部清除",
+    "clearOptions": "篩選清除選項",
+    "clearSidebarFilters": "清除側邊欄篩選",
+    "clearColumnFilters": "清除欄位篩選",
+    "clearFiltersAndSearch": "清除篩選與搜尋",
     "loading": "載入中...",
     "customFilter": "自訂篩選器",
     "customFilterHelp": "活躍的自訂表示式篩選器（例如輔種結果）",
@@ -828,18 +875,15 @@
     "uncategorized": "未分類",
     "tags": "標籤",
     "trackers": "Tracker",
-    "customExpression": "自訂表示式",
     "untagged": "無標籤",
     "noTracker": "無 Tracker",
     "hideEmpty": "隱藏空項",
     "showEmpty": "顯示空項",
-    "showHidden": "顯示 {{count}} 個隱藏項",
     "searchCategories": "搜尋分類",
     "searchTags": "搜尋標籤",
     "searchTrackers": "搜尋 Tracker",
     "noCategoriesFound": "未找到匹配「{{query}}」的分類",
     "noTagsFound": "未找到匹配「{{query}}」的標籤",
-    "hiddenMatchSearch": "{{count}} 個隱藏項匹配搜尋",
     "createTag": "建立標籤",
     "createCategory": "建立分類",
     "createSubcategory": "建立子分類",
@@ -918,13 +962,11 @@
     "zoomIn": "放大",
     "zoomOut": "縮小",
     "zoomReset": "重設縮放",
-    "zoomLevel": "{{level}}%",
     "connectionConnectable": "可連線",
     "connectionUnknown": "連線狀態未知",
     "connectionPort": "連接埠：{{port}}",
     "connectionAriaLabel": "qBittorrent 連線狀態：{{status}}",
     "connectionAriaLabelUnknown": "qBittorrent 連線狀態未知",
-    "external": "外部",
     "externalIpAddresses": "外部 IP 位址",
     "streamStatus": {
       "crossInstance": {
@@ -955,7 +997,8 @@
         "message": "在 SSE 連線就緒前，每 {{seconds}} 秒輪詢一次。",
         "secondary": "每 {{seconds}} 秒輪詢一次"
       }
-    }
+    },
+    "dualStack": "IPv4 & IPv6"
   },
   "detailsPanel": {
     "tabs": {
@@ -978,10 +1021,8 @@
       "trackerUpdated": "Tracker URL 更新成功",
       "trackerUpdateFailed": "更新 Tracker 失敗",
       "fileRenamed": "檔案重新命名成功",
-      "fileRenameFailed": "重新命名檔案失敗",
       "folderRenamed": "資料夾重新命名成功",
-      "folderRenameFailed": "重新命名資料夾失敗",
-      "deletedTorrents": "已刪除 {{count}} 個種子",
+      "deletedTorrents_other": "已刪除 {{count}} 個種子",
       "deletedTorrent": "已刪除種子：{{name}}",
       "deleteFailed": "刪除失敗：{{error}}"
     },
@@ -990,10 +1031,6 @@
       "description": "輸入節點位址（IP:連接埠），每行一個或用逗號分隔",
       "label": "節點",
       "placeholder": "192.168.1.100:51413\n10.0.0.5:6881\ntracker.example.com:8080\n[2001:db8::1]:6881"
-    },
-    "banPeer": {
-      "title": "封鎖節點",
-      "description": "確定要封鎖 {{address}} 嗎？"
     },
     "banPeerPermanent": {
       "title": "永久封鎖節點",
@@ -1118,24 +1155,17 @@
     "network": "網路",
     "seeds": "做種",
     "peers": "節點",
-    "downSpeed": "下載速度",
-    "upSpeed": "上傳速度",
     "downLimit": "下載限制",
     "upLimit": "上傳限制",
-    "connections": "連線數",
     "time": "時間",
     "addedOn": "新增時間",
     "completedOn": "完成時間",
-    "lastActivity": "最後活動",
-    "lastSeen": "最後出現",
-    "eta": "預計剩餘時間",
     "timeActive": "活躍時間",
     "seedingTime": "做種時間",
     "limits": "限制",
     "ratioLimit": "分享率限制",
     "seedingTimeLimit": "做種時間限制",
     "inactiveSeedingLimit": "不活躍做種限制",
-    "info": "資訊",
     "pieceSize": "分塊大小",
     "pieces": "分塊數",
     "createdOn": "建立時間",
@@ -1144,7 +1174,6 @@
   "trackersTable": {
     "status": "狀態",
     "tracker": "Tracker",
-    "tier": "層級",
     "seeds": "做種",
     "leeches": "下載",
     "downloaded": "已完成",
@@ -1163,7 +1192,6 @@
     "upSpeed": "上傳速度",
     "downloaded": "已下載",
     "uploaded": "已上傳",
-    "relevance": "相關性",
     "copyIpAddress": "複製位址",
     "banPeer": "封鎖節點",
     "noPeersConnected": "無已連線節點",
@@ -1185,7 +1213,7 @@
     "url": "URL",
     "noHttpSources": "無 HTTP 來源",
     "searchUrls": "搜尋 URL...",
-    "httpSources": "{{count}} 個 HTTP 來源",
+    "httpSources_other": "{{count}} 個 HTTP 來源",
     "filteredCount": "{{filtered}}/{{total}}",
     "copyUrl": "複製 URL",
     "toast": {
@@ -1204,7 +1232,7 @@
     "expandAll": "全部展開",
     "collapseAll": "全部摺疊",
     "searchFiles": "搜尋檔案...",
-    "fileCount": "{{count}} 個檔案",
+    "fileCount_other": "{{count}} 個檔案",
     "filteredCount": "{{filtered}}/{{total}}",
     "noFiles": "無檔案",
     "headers": {
@@ -1422,7 +1450,7 @@
       "title": "搜尋種子",
       "description": "按名稱、分類或標籤搜尋。支援 glob 模式，如 *.mkv 或 *1080p*。",
       "placeholder": "搜尋種子...",
-      "globExamples": "*.mkv, *1080p*, S??E??",
+      "globExamples": "*.mkv, *1080p*, *S[0-9][0-9]E[0-9][0-9]*",
       "autoSearches": "輸入後自動搜尋"
     },
     "shareLimit": {
@@ -1456,6 +1484,10 @@
     "descending": "降序",
     "sortDirection": "{{direction}}排序",
     "toggleColumns": "切換列顯示",
+    "stretchMode": "延展名稱欄位以填滿表格",
+    "scrollMode": "自行設定名稱欄位寬度並橫向捲動",
+    "stretchInactive": "已暫停，因為可見欄位已填滿表格",
+    "reorderColumn": "拖曳以重新排序 {{column}}",
     "tableAriaLabel": "種子表格"
   },
   "tableColumns": {
@@ -1472,7 +1504,6 @@
     "size": "大小",
     "totalSize": "總大小",
     "progress": "進度",
-    "state": "狀態",
     "seeds": "做種",
     "peers": "節點",
     "downSpeed": "下載速度",
@@ -1515,6 +1546,7 @@
   "stateLabels": {
     "downloading": "下載中",
     "metaDL": "獲取中繼資料中",
+    "forcedMetaDL": "(強制) 獲取中繼資料中",
     "allocating": "分配空間中",
     "stalledDL": "停滯",
     "queuedDL": "排隊中",
@@ -1532,12 +1564,23 @@
     "error": "錯誤",
     "missingFiles": "檔案丟失",
     "checkingResumeData": "檢查恢復資料中",
-    "moving": "移動中"
+    "moving": "移動中",
+    "unknown": "未知"
   },
+  "stateLabelFallback": "無法識別",
   "sort": {
     "label": "排序",
     "ascending": "升序",
-    "descending": "降序"
+    "descending": "降序",
+    "options": {
+      "addedOn": "最近新增",
+      "downloadLimit": "下載限制",
+      "uploadLimit": "上傳限制",
+      "sessionDownloaded": "已下載（本次工作階段）",
+      "sessionUploaded": "已上傳（本次工作階段）",
+      "lastSeenComplete": "最近完成",
+      "reannounceIn": "重新通報倒數計時"
+    }
   },
   "details": {
     "failedToUpdatePriorities": "更新檔案優先順序失敗",
@@ -1571,6 +1614,39 @@
     "applyFailed": "輔種失敗：{{message}}",
     "addOptionTitle": "作為輔種新增",
     "addOptionDescription": "將此種子與現有種子匹配，而不是重新下載。",
-    "addOptionButton": "手動匹配"
+    "addOptionButton": "手動匹配",
+    "pack": {
+      "description": "選擇一個種子進行手動比對，或選擇多個單集來組裝此整季包。",
+      "targetLabel": "目標種子",
+      "checking": "正在檢查所選單集……",
+      "checkFailed": "無法檢查此選擇。",
+      "coverage": "已配對 {{matched}}/{{total}} 集 · 覆蓋率 {{percent}}%",
+      "missing": "缺少 {{size}}",
+      "recheck": "整季包將以暫停狀態加入並重新檢查。當檢查結果達到已連結位元組的比例時，將恢復下載。",
+      "reviewRules": "前往 Cross-seed → 規則查看保護設定",
+      "proposalLimit": "此整季包包含 {{count}} 集。候選清單最多顯示 {{limit}} 個種子。請透過搜尋選擇缺少的目標。",
+      "dropped": "整季包已加入。已排除的目標：{{names}}",
+      "rejected": "{{name}}：{{reason}}",
+      "reasons": {
+        "no_filesystem_access": "此實例需要本機檔案系統存取權限才能組裝整季包。",
+        "no_link_mode": "請在此實例上啟用硬連結或 reflink 模式，以選擇多個目標。",
+        "no_base_directory": "請為此實例設定連結基礎目錄。",
+        "no_episode_files": "此整季包中未找到可播放的單集檔案。",
+        "target_not_found": "此實例中未找到目標種子。",
+        "incomplete": "目標種子尚未下載完成。",
+        "no_episode_identity": "無法解析集數。",
+        "file_list_unavailable": "無法取得目標種子的檔案清單。",
+        "episode_file_invalid": "目標種子必須僅包含一個與所選單集識別相符的可播放檔案。",
+        "size_mismatch": "本機檔案大小與整季包中的檔案大小不符。",
+        "release_mismatch": "發行版本與整季包不符。",
+        "local_file_unavailable": "本機檔案不存在或無法使用。",
+        "not_paired": "此目標未提供整季包中的單集，或其他所選目標已涵蓋該單集。",
+        "layout_mismatch": "無法使用所選檔案建立安全的連結目錄。",
+        "unsafe_piece_boundary": "分片邊界保護已阻止新增此合集，因為所選檔案與缺少的檔案共用一個資料區塊。下載該資料區塊可能會透過硬連結變更原始檔案。手動組裝不受覆蓋率門檻限制。",
+        "already_exists": "此種子已存在。",
+        "link_failed": "建立連結失敗。",
+        "add_failed": "加入種子失敗。"
+      }
+    }
   }
 }

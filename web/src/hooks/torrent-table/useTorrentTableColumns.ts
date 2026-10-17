@@ -7,7 +7,7 @@ import { createColumns, type TableViewMode } from "@/components/torrents/Torrent
 import type { TorrentTableColumnDef } from "@/components/torrents/tanstackTableFeatures"
 import type { SpeedUnit } from "@/lib/speedUnits"
 import type { TrackerCustomizationLookup } from "@/lib/tracker-customizations"
-import type { AppPreferences, Torrent } from "@/types"
+import type { Torrent } from "@/types"
 import type { TFunction } from "i18next"
 import { type RefObject, useMemo } from "react"
 
@@ -27,7 +27,7 @@ export interface UseTorrentTableColumnsParams {
   speedUnit: SpeedUnit
   trackerIcons?: Record<string, string>
   formatTimestamp: (timestamp: number, relative?: boolean) => string
-  preferences?: AppPreferences | null
+  instanceMaxRatio?: number
   supportsTrackerHealth: boolean
   isUnifiedView: boolean
   isCrossInstanceEndpoint?: boolean
@@ -67,7 +67,7 @@ export function useTorrentTableColumns({
   speedUnit,
   trackerIcons,
   formatTimestamp,
-  preferences,
+  instanceMaxRatio,
   supportsTrackerHealth,
   isUnifiedView,
   isCrossInstanceEndpoint,
@@ -80,37 +80,43 @@ export function useTorrentTableColumns({
   sortedTorrents,
 }: UseTorrentTableColumnsParams): TorrentTableColumns {
   // Memoize columns to avoid unnecessary recalculations
-  const columns = useMemo(() => {
-    const allColumns = createColumns(incognitoMode, {
-      shiftPressedRef,
-      lastSelectedIndexRef,
-      // Pass custom selection handlers
-      customSelectAll: {
-        onSelectAll: handleSelectAll,
-        isAllSelected: isSelectAllChecked,
-        isIndeterminate: isSelectAllIndeterminate,
-      },
-      onRowSelection: handleRowSelection,
-      getSelectionIdentity,
-      isAllSelected,
-      excludedFromSelectAll,
-    }, speedUnit, trackerIcons, (timestamp: number) => formatTimestamp(timestamp, true), preferences, supportsTrackerHealth, isUnifiedView && isCrossInstanceEndpoint, desktopViewMode as TableViewMode, trackerCustomizationLookup, !isReadOnly, t, shouldShowCategory)
-
-    if (!hiddenColumnIds || hiddenColumnIds.size === 0) {
-      return allColumns
-    }
-
-    return allColumns.filter(column => {
-      const columnId = column.id ?? (
-        "accessorKey" in column && typeof column.accessorKey === "string"
-          ? column.accessorKey
-          : undefined
-      )
-      return !columnId || !hiddenColumnIds.has(columnId)
-    })
-  },
-  // shiftPressedRef/lastSelectedIndexRef are stable refs (passed in); listed to satisfy exhaustive-deps.
-  [shiftPressedRef, lastSelectedIndexRef, incognitoMode, speedUnit, trackerIcons, formatTimestamp, handleSelectAll, isSelectAllChecked, isSelectAllIndeterminate, handleRowSelection, getSelectionIdentity, isAllSelected, excludedFromSelectAll, preferences, supportsTrackerHealth, isUnifiedView, isCrossInstanceEndpoint, desktopViewMode, trackerCustomizationLookup, isReadOnly, hiddenColumnIds, shouldShowCategory, t]
+  const columns = useMemo(
+    () => {
+      const allColumns = createColumns({
+        incognitoMode,
+        shouldShowCategory,
+        selectionEnhancers: {
+          shiftPressedRef,
+          lastSelectedIndexRef,
+          // Pass custom selection handlers
+          customSelectAll: {
+            onSelectAll: handleSelectAll,
+            isAllSelected: isSelectAllChecked,
+            isIndeterminate: isSelectAllIndeterminate,
+          },
+          onRowSelection: handleRowSelection,
+          getSelectionIdentity,
+          isAllSelected,
+          excludedFromSelectAll,
+        },
+        speedUnit,
+        trackerIcons,
+        formatTimestamp: (timestamp: number) => formatTimestamp(timestamp, true),
+        instanceMaxRatio,
+        supportsTrackerHealth,
+        showInstanceColumn: isUnifiedView && isCrossInstanceEndpoint,
+        viewMode: desktopViewMode as TableViewMode,
+        trackerCustomizationLookup,
+        includeSelectionColumn: !isReadOnly,
+      }, t)
+      if (!hiddenColumnIds || hiddenColumnIds.size === 0) return allColumns
+      return allColumns.filter(column => {
+        const id = column.id ?? ("accessorKey" in column && typeof column.accessorKey === "string" ? column.accessorKey : undefined)
+        return !id || !hiddenColumnIds.has(id)
+      })
+    },
+    // shiftPressedRef/lastSelectedIndexRef are stable refs (passed in); listed to satisfy exhaustive-deps.
+    [shiftPressedRef, lastSelectedIndexRef, incognitoMode, speedUnit, trackerIcons, formatTimestamp, handleSelectAll, isSelectAllChecked, isSelectAllIndeterminate, handleRowSelection, getSelectionIdentity, isAllSelected, excludedFromSelectAll, instanceMaxRatio, supportsTrackerHealth, isUnifiedView, isCrossInstanceEndpoint, desktopViewMode, trackerCustomizationLookup, isReadOnly, hiddenColumnIds, shouldShowCategory, t]
   )
 
   const torrentIdentityCounts = useMemo(() => {

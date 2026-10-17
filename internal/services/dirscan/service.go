@@ -20,7 +20,7 @@ import (
 	"time"
 
 	qbt "github.com/autobrr/go-qbittorrent"
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -70,6 +70,7 @@ type Service struct {
 	trackerCustomizationStore *models.TrackerCustomizationStore
 	notifier                  notifications.Notifier
 	backendPool               *fsops.Pool
+	blocklistStore            *models.CrossSeedBlocklistStore
 
 	// Components for search/match/inject
 	parser   *Parser
@@ -128,6 +129,7 @@ func NewService(
 	trackerCustomizationStore *models.TrackerCustomizationStore, // optional, for display-name resolution
 	notifier notifications.Notifier,
 	backendPool *fsops.Pool,
+	blocklistStore *models.CrossSeedBlocklistStore,
 ) *Service {
 	if cfg.SchedulerInterval <= 0 {
 		cfg.SchedulerInterval = DefaultConfig().SchedulerInterval
@@ -143,7 +145,7 @@ func NewService(
 	parser := NewParser(nil) // nil uses default normalizer
 	searcher := NewSearcher(jackettService, parser)
 	torrentChecker := &syncManagerTorrentChecker{sm: syncManager}
-	injector := NewInjector(jackettService, syncManager, torrentChecker, instanceStore, trackerCustomizationStore, backendPool)
+	injector := NewInjector(jackettService, syncManager, syncManager, torrentChecker, instanceStore, trackerCustomizationStore, backendPool)
 
 	return &Service{
 		cfg:                       cfg,
@@ -156,6 +158,7 @@ func NewService(
 		trackerCustomizationStore: trackerCustomizationStore,
 		notifier:                  notifier,
 		backendPool:               backendPool,
+		blocklistStore:            blocklistStore,
 		parser:                    parser,
 		searcher:                  searcher,
 		injector:                  injector,
@@ -654,7 +657,13 @@ func (s *Service) executeScan(ctx context.Context, directoryID int, runID int64)
 	}
 
 	matchesFound, torrentsAdded := s.runSearchAndInjectPhase(ctx, dir, workSelection, fileIDIndex, trackedFiles, settings, matcher, runID, enabledIndexerIDs, &l)
-	s.finalizeRun(ctx, runID, workSelection.eligibleFiles, workSelection.skippedFiles, matchesFound, torrentsAdded, dir.TargetInstanceID, &l)
+	completed := s.finalizeRun(ctx, runID, workSelection.eligibleFiles, workSelection.skippedFiles, matchesFound, torrentsAdded, dir.TargetInstanceID, &l)
+	// Only a run that walked the whole directory can judge what is missing from it.
+	// A webhook or manual run narrowed to a subfolder refreshes just that subfolder's
+	// rows, so pruning on it would delete every live row outside the subroot.
+	if completed && scanRoot == dir.Path {
+		s.pruneMissingFilesBestEffort(dir.ID, &l)
+	}
 }
 
 // enabledIndexerIDSet returns the IDs of all enabled indexers as a set.
@@ -729,9 +738,10 @@ func matchModeFromSettings(settings *models.DirScanSettings) MatchMode {
 	return MatchModeStrict
 }
 
-func (s *Service) finalizeRun(ctx context.Context, runID int64, filesFound, filesSkipped, matchesFound, torrentsAdded int, instanceID int, l *zerolog.Logger) {
+// finalizeRun reports whether the run reached the success state.
+func (s *Service) finalizeRun(ctx context.Context, runID int64, filesFound, filesSkipped, matchesFound, torrentsAdded int, instanceID int, l *zerolog.Logger) bool {
 	if s == nil || s.store == nil || runID <= 0 {
-		return
+		return false
 	}
 
 	if ctx.Err() != nil {
@@ -743,14 +753,14 @@ func (s *Service) finalizeRun(ctx context.Context, runID int64, filesFound, file
 			l.Info().Msg("dirscan: scan canceled during search/inject")
 		}
 		s.markRunCanceled(context.Background(), runID, l, "canceled during search/inject")
-		return
+		return false
 	}
 
 	if err := s.store.UpdateRunCompleted(context.Background(), runID, matchesFound, torrentsAdded); err != nil {
 		if l != nil {
 			l.Error().Err(err).Msg("dirscan: failed to mark run as completed")
 		}
-		return
+		return false
 	}
 
 	// Run completed successfully.
@@ -772,6 +782,29 @@ func (s *Service) finalizeRun(ctx context.Context, runID int64, filesFound, file
 			Int("matchesFound", matchesFound).
 			Int("torrentsAdded", torrentsAdded).
 			Msg("dirscan: scan completed")
+	}
+
+	return true
+}
+
+// pruneMissingFilesBestEffort drops tracked rows for files that successive scans no
+// longer find. It runs only after a successful scan, so a failed walk over an
+// unavailable filesystem never removes rows.
+func (s *Service) pruneMissingFilesBestEffort(directoryID int, l *zerolog.Logger) {
+	if s == nil || s.store == nil || directoryID <= 0 {
+		return
+	}
+
+	removed, err := s.store.PruneMissingFiles(context.Background(), directoryID)
+	if err != nil {
+		if l != nil {
+			l.Warn().Err(err).Msg("dirscan: failed to prune tracked files that no longer exist")
+		}
+		return
+	}
+
+	if removed > 0 && l != nil {
+		l.Info().Int64("removed", removed).Msg("dirscan: pruned tracked files that no longer exist")
 	}
 }
 
@@ -847,13 +880,16 @@ func (s *Service) validateDirectory(ctx context.Context, directoryID int, runID 
 
 // runScanPhase executes the directory scanning phase.
 // Returns the raw scan result and true if successful, or nil and false on failure.
-func (s *Service) runScanPhase(ctx context.Context, dir *models.DirScanDirectory, scanRoot string, runID int64, l *zerolog.Logger) (*ScanResult, map[string]string, bool) {
+func (s *Service) runScanPhase(ctx context.Context, dir *models.DirScanDirectory, scanRoot string, runID int64, l *zerolog.Logger) (*ScanResult, *seedingIndex, bool) {
 	if s.backendPool == nil {
 		l.Error().Msg("dirscan: backend pool not configured")
 		s.markRunFailed(ctx, runID, "backend pool not configured", dir.TargetInstanceID, l)
 		return nil, nil, false
 	}
-	backend, err := s.backendPool.GetBackend(ctx, dir.TargetInstanceID)
+	// validateDirectory admitted the instance on local access from an earlier
+	// read. If local access was turned off since, the scan must not walk the
+	// SSH host at the local path.
+	backend, err := s.backendPool.LocalBackend(ctx, dir.TargetInstanceID)
 	if err != nil {
 		l.Warn().Err(err).Msg("dirscan: no filesystem backend, failing scan")
 		s.markRunFailed(ctx, runID, fmt.Sprintf("no filesystem backend: %v", err), dir.TargetInstanceID, l)
@@ -864,11 +900,11 @@ func (s *Service) runScanPhase(ctx context.Context, dir *models.DirScanDirectory
 
 	// Build FileID index from qBittorrent torrents for already-seeding detection.
 	// This is best-effort; if it fails, scanning continues without seeding skips.
-	fileIDIndex := make(map[string]string)
+	fileIDIndex := &seedingIndex{}
 	if s.syncManager != nil {
-		if index, err := s.buildFileIDIndex(ctx, dir.TargetInstanceID, l); err != nil {
+		if index, err := s.buildFileIDIndex(ctx, dir.TargetInstanceID, backend, l); err != nil {
 			l.Debug().Err(err).Msg("dirscan: failed to build FileID index, continuing without seeding detection")
-		} else if len(index) > 0 {
+		} else if index.len() > 0 {
 			fileIDIndex = index
 			scanner.SetFileIDIndex(index)
 		}
@@ -904,7 +940,7 @@ func (s *Service) runSearchAndInjectPhase(
 	ctx context.Context,
 	dir *models.DirScanDirectory,
 	workSelection scanWorkSelection,
-	fileIDIndex map[string]string,
+	fileIDIndex *seedingIndex,
 	trackedFiles *trackedFilesIndex,
 	settings *models.DirScanSettings,
 	matcher *Matcher,
@@ -986,7 +1022,7 @@ func (s *Service) processRootSearchee(
 	dir *models.DirScanDirectory,
 	searchee *Searchee,
 	workItems []searcheeWorkItem,
-	fileIDIndex map[string]string,
+	fileIDIndex *seedingIndex,
 	trackedFiles *trackedFilesIndex,
 	injectedTVGroups map[tvGroupKey]struct{},
 	settings *models.DirScanSettings,
@@ -1482,15 +1518,15 @@ func (s *Service) recoverStuckRuns() error {
 	return nil
 }
 
-func isAlreadySeedingByFileID(searchee *Searchee, index map[string]string) bool {
-	if searchee == nil || len(searchee.Files) == 0 || len(index) == 0 {
+func isAlreadySeedingByFileID(searchee *Searchee, index *seedingIndex) bool {
+	if searchee == nil || len(searchee.Files) == 0 || index.len() == 0 {
 		return false
 	}
 	for _, f := range searchee.Files {
-		if f == nil || f.FileID.IsZero() {
+		if f == nil {
 			return false
 		}
-		if _, ok := index[string(f.FileID.Bytes())]; !ok {
+		if _, ok := index.hash(f.FileID); !ok {
 			return false
 		}
 	}
@@ -2047,6 +2083,17 @@ func (s *Service) tryMatchAndInject(
 	if !decision.Accept {
 		logDirScanMatchRejection(l, searchee, result, parsed, contentType, settings, matchResult, decision, matcher)
 		return nil
+	}
+
+	if s.blocklistStore != nil {
+		// Fails closed like the cross-seed path: an unreadable blocklist skips the match.
+		if _, blocked, err := s.blocklistStore.FindBlocked(ctx, dir.TargetInstanceID, []string{parsed.InfoHash, parsed.InfoHashV2}); err != nil {
+			l.Warn().Err(err).Str("hash", parsed.InfoHash).Msg("dirscan: failed to check cross-seed blocklist, skipping match")
+			return nil
+		} else if blocked {
+			l.Debug().Str("name", searchee.Name).Str("hash", parsed.InfoHash).Msg("dirscan: blocked by cross-seed blocklist")
+			return nil
+		}
 	}
 
 	// Check if this torrent already exists in qBittorrent

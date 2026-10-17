@@ -43,69 +43,7 @@ func TestInstanceStoreClientTypeRoundTrip(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err, "Failed to create instance store")
 
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err, "Failed to create string_pool table")
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			last_connected_at TIMESTAMP,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
+	_, err = db.ExecContext(ctx, testInstanceSchema)
 	require.NoError(t, err, "Failed to create test table")
 
 	// A Transmission instance round-trips its client type through Get and List.
@@ -133,6 +71,81 @@ func TestInstanceStoreClientTypeRoundTrip(t *testing.T) {
 	_, err = store.Create(ctx, ClientType("deluge"), "bad", "http://localhost:8080", "user", "pass", nil, nil, false, nil)
 	require.Error(t, err, "invalid client type should be rejected")
 }
+
+// testInstanceSchema is the shared test schema for instance store tests.
+// Keeping it in one place avoids updating 7 inline schemas when columns change.
+// It must stay column-for-column with the migrated instances table: the columns
+// it invents are exactly the ones a statement can reference and still pass here
+// while failing against a real database.
+const testInstanceSchema = `
+	CREATE TABLE IF NOT EXISTS string_pool (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		value TEXT NOT NULL UNIQUE
+	);
+
+	CREATE TABLE instances (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name_id INTEGER NOT NULL,
+		host_id INTEGER NOT NULL,
+		username_id INTEGER NOT NULL,
+		password_encrypted TEXT NOT NULL,
+		api_key_encrypted TEXT NOT NULL DEFAULT '',
+		basic_username_id INTEGER,
+		basic_password_encrypted TEXT,
+		tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
+		sort_order INTEGER NOT NULL DEFAULT 0,
+		is_active BOOLEAN NOT NULL DEFAULT 1,
+		has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
+		use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
+		hardlink_base_dir TEXT NOT NULL DEFAULT '',
+		hardlink_dir_preset TEXT NOT NULL DEFAULT 'flat',
+		use_reflinks BOOLEAN NOT NULL DEFAULT 0,
+		fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
+		client_type TEXT NOT NULL DEFAULT 'qbittorrent',
+		owner_id INTEGER NOT NULL DEFAULT 1,
+		ssh_host TEXT NOT NULL DEFAULT '',
+		ssh_port INTEGER NOT NULL DEFAULT 22,
+		ssh_username TEXT NOT NULL DEFAULT '',
+		ssh_key_encrypted TEXT NOT NULL DEFAULT '',
+		ssh_host_key_encrypted TEXT NOT NULL DEFAULT '',
+		FOREIGN KEY (name_id) REFERENCES string_pool(id),
+		FOREIGN KEY (host_id) REFERENCES string_pool(id),
+		FOREIGN KEY (username_id) REFERENCES string_pool(id),
+		FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
+	);
+
+	CREATE VIEW instances_view AS
+	SELECT
+		i.id,
+		sp_name.value AS name,
+		sp_host.value AS host,
+		sp_username.value AS username,
+		i.password_encrypted,
+		i.api_key_encrypted,
+		sp_basic_username.value AS basic_username,
+		i.basic_password_encrypted,
+		i.tls_skip_verify,
+		i.sort_order,
+		i.is_active,
+		i.has_local_filesystem_access,
+		i.use_hardlinks,
+		i.hardlink_base_dir,
+		i.hardlink_dir_preset,
+		i.use_reflinks,
+		i.fallback_to_regular_mode,
+		i.client_type,
+		i.owner_id,
+		i.ssh_host,
+		i.ssh_port,
+		i.ssh_username,
+		i.ssh_key_encrypted,
+		i.ssh_host_key_encrypted
+	FROM instances i
+	LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
+	LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
+	LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
+	LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
+`
 
 func TestHostValidation(t *testing.T) {
 	tests := []struct {
@@ -264,72 +277,8 @@ func TestInstanceStoreWithHost(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err, "Failed to create instance store")
 
-	// Create string_pool table
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err, "Failed to create string_pool table")
-
-	// Create new schema (with interned host, username, basic_username fields)
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			last_connected_at TIMESTAMP,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err, "Failed to create test table")
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	// Test creating an instance with host
 	instance, err := store.Create(ctx, ClientTypeQbittorrent, "Test Instance", "http://localhost:8080", "testuser", "testpass", nil, nil, false, nil)
@@ -384,76 +333,12 @@ func TestInstanceStoreWithEmptyUsername(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err, "Failed to create instance store")
 
-	// Create string_pool table
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err, "Failed to create string_pool table")
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	// Insert empty string into string_pool (as migration does)
 	_, err = db.ExecContext(ctx, `INSERT INTO string_pool (value) VALUES ('')`)
 	require.NoError(t, err, "Failed to insert empty string")
-
-	// Create new schema
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			last_connected_at TIMESTAMP,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err, "Failed to create test table")
 
 	// Test creating an instance with empty username (localhost bypass)
 	instance, err := store.Create(ctx, ClientTypeQbittorrent, "Test Instance", "http://localhost:8080", "", "", nil, nil, false, nil)
@@ -497,70 +382,9 @@ func TestInstanceStoreEmptyUsernameSelfHealing(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err, "Failed to create instance store")
 
-	// Create string_pool table WITHOUT the empty string (simulates cleanup deletion)
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err, "Failed to create string_pool table")
-
 	// NOTE: Intentionally NOT inserting empty string - this is the bug scenario
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err, "Failed to create test table")
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	// This should work even without pre-inserted empty string (self-healing)
 	instance, err := store.Create(ctx, ClientTypeQbittorrent, "Bypass Auth Instance", "http://localhost:8080", "", "", nil, nil, false, nil)
@@ -596,70 +420,9 @@ func TestInstanceStoreUpdateEmptyUsernameSelfHealing(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err, "Failed to create instance store")
 
-	// Create string_pool table WITHOUT the empty string (simulates cleanup deletion)
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err, "Failed to create string_pool table")
-
 	// NOTE: Intentionally NOT inserting empty string - this is the bug scenario
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err, "Failed to create test table")
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	// First create an instance with non-empty username (this works without empty string)
 	instance, err := store.Create(ctx, ClientTypeQbittorrent, "Regular Instance", "http://localhost:8080", "admin", "pass", nil, nil, false, nil)
@@ -698,70 +461,8 @@ func TestInstanceStoreUpdateOrder(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err)
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			last_connected_at TIMESTAMP,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	first, err := store.Create(ctx, ClientTypeQbittorrent, "First", "http://first.local", "user1", "pass1", nil, nil, false, nil)
 	require.NoError(t, err)
@@ -807,67 +508,8 @@ func TestInstanceStoreAPIKeyAuth(t *testing.T) {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err)
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	instance, err := store.Create(ctx, ClientTypeQbittorrent, "API Key Instance", "http://localhost:8080", "admin", "password", nil, nil, false, nil, "api-key-123")
 	require.NoError(t, err)
@@ -943,67 +585,8 @@ func newInstanceStoreWithAPIKeySchema(t *testing.T) *InstanceStore {
 	store, err := NewInstanceStore(db, encryptionKey)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE string_pool (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			value TEXT NOT NULL UNIQUE
-		)
-	`)
-	require.NoError(t, err)
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE instances (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name_id INTEGER NOT NULL,
-			host_id INTEGER NOT NULL,
-			username_id INTEGER NOT NULL,
-			password_encrypted TEXT NOT NULL,
-			api_key_encrypted TEXT NOT NULL DEFAULT '',
-			basic_username_id INTEGER,
-			basic_password_encrypted TEXT,
-			tls_skip_verify BOOLEAN NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0,
-			is_active BOOLEAN DEFAULT 1,
-			has_local_filesystem_access BOOLEAN NOT NULL DEFAULT 0,
-			use_hardlinks BOOLEAN NOT NULL DEFAULT 0,
-			hardlink_base_dir TEXT NOT NULL DEFAULT '',
-			hardlink_dir_preset TEXT NOT NULL DEFAULT '',
-			use_reflinks BOOLEAN NOT NULL DEFAULT 0,
-			fallback_to_regular_mode BOOLEAN NOT NULL DEFAULT 0,
-			client_type TEXT NOT NULL DEFAULT 'qbittorrent',
-			FOREIGN KEY (name_id) REFERENCES string_pool(id),
-			FOREIGN KEY (host_id) REFERENCES string_pool(id),
-			FOREIGN KEY (username_id) REFERENCES string_pool(id),
-			FOREIGN KEY (basic_username_id) REFERENCES string_pool(id)
-		);
-
-		CREATE VIEW instances_view AS
-		SELECT
-			i.id,
-			sp_name.value AS name,
-			sp_host.value AS host,
-			sp_username.value AS username,
-			i.password_encrypted,
-			i.api_key_encrypted,
-			sp_basic_username.value AS basic_username,
-			i.basic_password_encrypted,
-			i.tls_skip_verify,
-			i.sort_order,
-			i.is_active,
-			i.has_local_filesystem_access,
-			i.use_hardlinks,
-			i.hardlink_base_dir,
-			i.hardlink_dir_preset,
-			i.use_reflinks,
-			i.fallback_to_regular_mode,
-			i.client_type
-		FROM instances i
-		LEFT JOIN string_pool sp_name ON i.name_id = sp_name.id
-		LEFT JOIN string_pool sp_host ON i.host_id = sp_host.id
-		LEFT JOIN string_pool sp_username ON i.username_id = sp_username.id
-		LEFT JOIN string_pool sp_basic_username ON i.basic_username_id = sp_basic_username.id;
-	`)
-	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, testInstanceSchema)
+	require.NoError(t, err, "Failed to create test schema")
 
 	return store
 }

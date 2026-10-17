@@ -37,6 +37,7 @@ vi.mock("react-i18next", () => ({
 import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { resetPendingListRefetchesForTests, scheduleTorrentListRefetches, useTorrentActions } from "@/hooks/useTorrentActions"
+import { buildTorrentActionTargets } from "@/lib/torrent-action-targets"
 import { makeTorrent } from "@/test/mockTorrent"
 import type { TorrentFilters } from "@/types"
 
@@ -130,7 +131,7 @@ describe("useTorrentActions - delete", () => {
     expect(mockedToast.success).toHaveBeenCalledWith("actionToasts.success.delete/2")
   })
 
-  it("select-all delete sends empty hashes + selectAll, normalizes expanded categories, and uses clientHashes for optimism", async () => {
+  it("select-all delete sends empty hashes + selectAll, passes filters through, and uses clientHashes for optimism", async () => {
     const { result, queryClient } = renderActions()
 
     queryClient.setQueryData(TORRENTS_LIST_KEY(), {
@@ -164,9 +165,9 @@ describe("useTorrentActions - delete", () => {
     expect(payload.selectAll).toBe(true)
     expect(payload.search).toBe("ubuntu")
     expect(payload.excludeHashes).toEqual(["zz"])
-    // expandedCategories collapse into categories in the outgoing payload
-    expect(payload.filters?.categories).toEqual(["movies", "tv"])
-    expect(payload.filters?.excludeCategories).toEqual(["junk"])
+    // Filters go to api.bulkAction untouched; the expandedCategories fold is
+    // the api client's job (ADR 0010, pinned in api.torrents.test.ts).
+    expect(payload.filters).toBe(filters)
 
     // Optimism uses clientHashes (a,b) not the empty hashes array; clientCount drives totals
     const cache = queryClient.getQueryData(TORRENTS_LIST_KEY()) as {
@@ -491,6 +492,62 @@ describe("useTorrentActions - prepare helpers", () => {
     })
     expect(mockedApi.bulkAction).toHaveBeenCalledTimes(1)
     expect(mockedApi.bulkAction.mock.calls[0][1].action).toBe("recheck")
+  })
+
+  it("prepareRecheckAction pins the single-torrent recheck to its instance so the unified view does not fan out by hash", async () => {
+    const { result } = renderActions({ instanceIds: [3, 4, 5] })
+    const torrent = { ...makeTorrent({ hash: "shared" }), instanceId: 3 }
+
+    await act(async () => {
+      result.current.prepareRecheckAction(["shared"], 1, [torrent])
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(mockedApi.bulkAction).toHaveBeenCalledTimes(1)
+    expect(mockedApi.bulkAction.mock.calls[0][1]).toMatchObject({
+      action: "recheck",
+      hashes: ["shared"],
+      targets: [{ instanceId: 3, hash: "shared" }],
+    })
+  })
+
+  it("prepareRecheckAction stores the torrents in contextTorrents for the confirm dialog", async () => {
+    const { result } = renderActions({ instanceIds: [3, 4, 5] })
+    const torrents = [
+      { ...makeTorrent({ hash: "a" }), instanceId: 3 },
+      { ...makeTorrent({ hash: "b" }), instanceId: 4 },
+    ]
+
+    act(() => {
+      result.current.prepareRecheckAction(["a", "b"], 2, torrents)
+    })
+    expect(result.current.showRecheckDialog).toBe(true)
+    expect(result.current.contextTorrents).toEqual(torrents)
+  })
+
+  it("prepareTmmAction stores the torrents so the confirm dialog can pin targets in the unified view", async () => {
+    const { result } = renderActions({ instanceIds: [3, 4, 5] })
+    const torrents = [{ ...makeTorrent({ hash: "shared" }), instanceId: 3 }]
+
+    act(() => {
+      result.current.prepareTmmAction(["shared"], 1, true, torrents)
+    })
+    expect(result.current.showTmmDialog).toBe(true)
+    expect(result.current.contextTorrents).toEqual(torrents)
+
+    await act(async () => {
+      result.current.handleTmmConfirm(["shared"], false, undefined, undefined, undefined, {
+        actionTargets: buildTorrentActionTargets(result.current.contextTorrents, 0),
+      })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(mockedApi.bulkAction).toHaveBeenCalledTimes(1)
+    expect(mockedApi.bulkAction.mock.calls[0][1]).toMatchObject({
+      action: "toggleAutoTMM",
+      enable: true,
+      targets: [{ instanceId: 3, hash: "shared" }],
+    })
   })
 
   it("handleSetSpeedLimits issues only one bulkAction when the download limit is negative", async () => {

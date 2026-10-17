@@ -6,12 +6,15 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -147,6 +150,23 @@ func TestConnectionPragmasApplyToEachConnection(t *testing.T) {
 	verifyPragmas(ctx, t, conn2)
 }
 
+// TestConnectionPragmasApplyWithoutNew pins the pragma hook to package init:
+// qui db migrate opens the source database with a bare sql.Open, never New.
+//
+// ponytail: only proves the regression in isolation, with
+// `go test -run TestConnectionPragmasApplyWithoutNew ./internal/database/`.
+// A full-suite run may call New first, which was enough to register the hook
+// under the old lazy path.
+func TestConnectionPragmasApplyWithoutNew(t *testing.T) {
+	sqlDB, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, sqlDB.Close())
+	})
+
+	verifyPragmas(t.Context(), t, sqlDB)
+}
+
 func TestReadOnlyConnectionsDoNotApplyWritePragmas(t *testing.T) {
 	log.Output(io.Discard)
 	ctx := t.Context()
@@ -230,6 +250,11 @@ var expectedSchema = map[string][]columnSpec{
 		{Name: "fallback_to_regular_mode", Type: "BOOLEAN"},
 		{Name: "client_type", Type: "TEXT"},
 		{Name: "owner_id", Type: "INTEGER"},
+		{Name: "ssh_host", Type: "TEXT"},
+		{Name: "ssh_port", Type: "INTEGER"},
+		{Name: "ssh_username", Type: "TEXT"},
+		{Name: "ssh_key_encrypted", Type: "TEXT"},
+		{Name: "ssh_host_key_encrypted", Type: "TEXT"},
 	},
 	"licenses": {
 		{Name: "id", Type: "INTEGER", PrimaryKey: true},
@@ -241,9 +266,6 @@ var expectedSchema = map[string][]columnSpec{
 		{Name: "last_validated", Type: "DATETIME"},
 		{Name: "provider", Type: "TEXT"},
 		{Name: "dodo_instance_id", Type: "TEXT"},
-		{Name: "polar_customer_id", Type: "TEXT"},
-		{Name: "polar_product_id", Type: "TEXT"},
-		{Name: "polar_activation_id", Type: "TEXT"},
 		{Name: "username", Type: "TEXT"},
 		{Name: "created_at", Type: "DATETIME"},
 		{Name: "updated_at", Type: "DATETIME"},
@@ -377,15 +399,54 @@ func listPostgresMigrationFiles(t *testing.T) []string {
 	return files
 }
 
+var (
+	testTemplatePath      string
+	buildTestTemplateOnce = sync.OnceValue(func() error { return buildTestTemplate(testTemplatePath) })
+)
+
+// TestMain holds the migrated template that openTestDatabase copies. The
+// package cannot use testdb, which imports it.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "qui-database-test-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "create test template dir:", err)
+		os.Exit(1)
+	}
+	testTemplatePath = filepath.Join(dir, "template.db")
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// openTestDatabase opens a copy of a migrated template, so only the first call
+// in the package runs every migration. A test of the migrations or of a fresh
+// open calls New itself.
 func openTestDatabase(t *testing.T) *DB {
 	t.Helper()
+	require.NoError(t, buildTestTemplateOnce())
+
+	data, err := os.ReadFile(testTemplatePath)
+	require.NoError(t, err)
 	dbPath := filepath.Join(t.TempDir(), "test.db")
+	require.NoError(t, os.WriteFile(dbPath, data, 0o600))
+
 	db, err := New(dbPath)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
 	})
 	return db
+}
+
+func buildTestTemplate(path string) error {
+	db, err := New(path)
+	if err != nil {
+		return err
+	}
+	if _, err := db.Conn().ExecContext(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return errors.Join(err, db.Close())
+	}
+	return db.Close()
 }
 
 type pragmaQuerier interface {
@@ -949,4 +1010,31 @@ func TestReadOnlyTransactionConcurrency(t *testing.T) {
 
 	// Commit the write transaction
 	require.NoError(t, txWrite.Commit())
+}
+
+// Concurrent misses on one query must converge on a single cached statement;
+// the losers close theirs instead of leaking a driver-side prepared statement.
+func TestGetStmtConcurrentMissSharesOneStatement(t *testing.T) {
+	db := openTestDatabase(t)
+	ctx := t.Context()
+	const query = "SELECT 1"
+
+	stmts := make([]*sql.Stmt, 32)
+	errs := make([]error, len(stmts))
+	var wg sync.WaitGroup
+	for i := range stmts {
+		wg.Go(func() {
+			stmts[i], errs[i] = db.getStmt(ctx, query, nil)
+		})
+	}
+	wg.Wait()
+
+	cached, found := db.readerStmts.Get(query)
+	require.True(t, found)
+	for i, s := range stmts {
+		require.NoError(t, errs[i])
+		require.Same(t, cached, s)
+		var n int
+		require.NoError(t, s.QueryRowContext(ctx).Scan(&n))
+	}
 }

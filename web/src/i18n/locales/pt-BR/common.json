@@ -21,7 +21,9 @@
     "generalSettings": "Configurações Gerais",
     "manageInstances": "Gerenciar Instâncias",
     "appearance": "Aparência",
-    "instanceBackups": "Backups de Instâncias"
+    "instanceBackups": "Backups de Instâncias",
+    "backToSite": "Voltar para getqui.com",
+    "docs": "Documentação"
   },
   "sidebar": {
     "instances": "Instâncias",
@@ -31,8 +33,8 @@
     "version": "Versão {{version}}",
     "language": "Idioma",
     "viewOnGitHub": "Ver no GitHub",
-    "rssRunning": "RSS rodando",
-    "rssEnabled": "RSS ativado",
+    "rssRunning": "RSS de cross-seed rodando",
+    "rssEnabled": "RSS de cross-seed ativado",
     "scanRunning": "Scan rodando",
     "showSidebar": "Mostrar barra lateral",
     "hideSidebar": "Ocultar barra lateral",
@@ -67,7 +69,7 @@
     "globPattern": "Padrão Glob...",
     "smartSearchTitle": "Recursos de Busca Inteligente:",
     "smartSearchGlob": "Padrões Glob:",
-    "smartSearchGlobExamples": "*.mkv, *1080p*, *S??E??*",
+    "smartSearchGlobExamples": "*.mkv, *1080p*, *S[0-9][0-9]E[0-9][0-9]*",
     "smartSearchFuzzy": "Busca Aproximada (Fuzzy):",
     "smartSearchFuzzyExample": "\"breaking bad\" encontra \"Breaking.Bad\"",
     "smartSearchDots": "Lida com pontos, sublinhados e colchetes",
@@ -77,11 +79,14 @@
     "torrentCreationTasksTitle": "Tarefas de Criação de Torrent",
     "updateAvailable": "Atualização Disponível",
     "updateVersion": "Versão {{version}}",
-    "rssRunning": "RSS rodando",
-    "rssEnabled": "RSS ativado",
+    "rssRunning": "RSS de cross-seed rodando",
+    "rssEnabled": "RSS de cross-seed ativado",
     "scanRunning": "Scan rodando",
     "allScope": "TODOS",
     "unified": "Unificado"
+  },
+  "titleBar": {
+    "speeds": "D: {{download}} U: {{upload}}"
   },
   "unifiedScope": {
     "unified": "Unificado",
@@ -100,8 +105,8 @@
     "noActiveClients": "Nenhum cliente ativo",
     "updateAvailable": "Atualização Disponível",
     "updateVersion": "Versão {{version}}",
-    "rssRunning": "RSS rodando",
-    "rssEnabled": "RSS ativado",
+    "rssRunning": "RSS de cross-seed rodando",
+    "rssEnabled": "RSS de cross-seed ativado",
     "scanRunning": "Scan rodando",
     "logout": "Sair",
     "version": "Versão {{version}}",
@@ -117,8 +122,7 @@
     "copyPath": "Copiar caminho",
     "scrollToTop": "Rolar para o topo",
     "search": "Buscar",
-    "select": "Selecionar",
-    "toggle": "Alternar"
+    "select": "Selecionar"
   },
   "placeholders": {
     "search": "Buscar...",
@@ -126,6 +130,13 @@
   },
   "feedback": {
     "noResultsFound": "Nenhum resultado encontrado."
+  },
+  "errors": {
+    "unknown": "Erro desconhecido",
+    "httpStatus": "Erro HTTP! Status: {{status}}",
+    "httpStatusHtml": "Erro HTTP! Status: {{status}} (o servidor retornou uma página de erro HTML)",
+    "ssoHtmlResponse": "A API retornou uma resposta HTML em vez de JSON. Se você estiver atrás de um proxy SSO (Cloudflare Access, Pangolin etc.), tente atualizar a página ou reabrir a URL em uma nova aba.",
+    "torrentFileDownloadFailed": "Falha ao baixar o arquivo torrent: {{status}}"
   },
   "status": {
     "disabled": "Desativado",
@@ -136,6 +147,18 @@
     "unknown": "Desconhecido",
     "trackerError": "Erro no tracker",
     "unreachable": "Inacessível"
+  },
+  "contentTypeLabels": {
+    "movie": "Filme",
+    "tv": "TV",
+    "music": "Música",
+    "audiobook": "Audiolivro",
+    "book": "Livro",
+    "comic": "Quadrinho",
+    "game": "Jogo",
+    "app": "App",
+    "adult": "Adulto",
+    "unknown": "Desconhecido"
   },
   "themeToggle": {
     "changeTheme": "Mudar tema",
@@ -149,14 +172,18 @@
     "switchedToMode": "Alterado para o modo {{mode}}",
     "switchedToTheme": "Alterado para o tema {{theme}}",
     "switchedToThemeVariation": "Alterado para o tema {{theme}} ({{variation}})",
-    "premiumThemeError": "Este é um tema premium. Abra Configurações → Temas para ativar uma licença.",
-    "custom": "Personalizado"
+    "premiumThemeError": "Este é um tema premium. Abra Configurações → Temas para ativar uma licença."
   },
   "updateBanner": {
     "updateAvailable": "Atualização Disponível",
     "versionAvailable": "A versão {{version}} já está disponível",
-    "viewRelease": "Ver Lançamento",
     "dismiss": "Dispensar"
+  },
+  "pwaUpdate": {
+    "reload": "Recarregar",
+    "waitingDescription": "Recarregue para aplicar a versão mais recente do qui.",
+    "activatedTitle": "qui atualizado",
+    "activatedDescription": "Recarregue quando for conveniente para concluir a instalação da versão mais recente."
   },
   "notFound": {
     "title": "Ops! Perdido no swarm?",
@@ -183,8 +210,7 @@
     "trigger": "Mais informações"
   },
   "numberInput": {
-    "unlimited": "Ilimitado",
-    "useUnlimited": " (use -1 para ilimitado)"
+    "unlimited": "Ilimitado"
   },
   "dateTime": {
     "na": "N/D",
@@ -210,14 +236,23 @@
       "year_other": "{{count}} anos"
     }
   },
-  "support": {
-    "title": "Apoiar o qui",
-    "description": "Já tem os temas e quer ajudar ainda mais? Tudo no qui já é seu. Uma assinatura não desbloqueia recursos, ela financia o tempo dedicado a construí-los.",
-    "perkPrefix": "Apoiadores recebem o cargo",
-    "perkSuffix": "no Discord e nossa eterna gratidão.",
-    "yearly": "{{price}} / ano",
-    "monthly": "{{price}} / mês",
-    "notLicense": "Os temas premium são uma compra única à parte."
-  },
-  "userSwitchPassword": "Digite a senha para trocar de usuário"
+  "dataUnits": {
+    "byte": {
+      "B": "B",
+      "KiB": "KiB",
+      "MiB": "MiB",
+      "GiB": "GiB",
+      "TiB": "TiB",
+      "PiB": "PiB"
+    },
+    "bit": {
+      "b": "bit",
+      "Kb": "kbit",
+      "Mb": "Mbit",
+      "Gb": "Gbit",
+      "Tb": "Tbit"
+    },
+    "perSecond": "{{unit}}/s",
+    "valueWithUnit": "{{value}} {{unit}}"
+  }
 }

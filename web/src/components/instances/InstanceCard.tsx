@@ -41,7 +41,8 @@ import { useInstances } from "@/hooks/useInstances"
 import { useAuth } from "@/hooks/useAuth"
 import { api } from "@/lib/api"
 import { useIncognitoMode } from "@/lib/incognito"
-import { cn, formatErrorMessage } from "@/lib/utils"
+import { formatErrorMessage } from "@/lib/format-error-message"
+import { cn } from "@/lib/utils"
 import type { InstanceResponse, ShareTargetUser } from "@/types"
 import {
   ArrowDown,

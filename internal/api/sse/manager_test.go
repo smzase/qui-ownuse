@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -21,9 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tmaxmax/go-sse"
 
-	"github.com/autobrr/qui/internal/database"
 	"github.com/autobrr/qui/internal/models"
 	"github.com/autobrr/qui/internal/qbittorrent"
+	"github.com/autobrr/qui/internal/testutil/testdb"
 )
 
 func TestStreamManagerHandleSyncErrorPublishesErrorEvent(t *testing.T) {
@@ -351,8 +350,7 @@ func TestStreamManagerHeartbeatPublishesEvent(t *testing.T) {
 }
 
 func TestStreamManagerServeInstanceNotFound(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	manager := NewStreamManager(nil, nil, store)
 
@@ -379,8 +377,7 @@ func TestStreamManagerServeInstanceNotFound(t *testing.T) {
 }
 
 func TestStreamManagerServeInstanceValidationError(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	ctx := context.Background()
 	_, err := store.Create(ctx, models.ClientTypeQbittorrent, "Test Instance", "http://localhost:8080", "user", "password", nil, nil, false, nil)
@@ -511,12 +508,10 @@ func decodeStreamPayload(t *testing.T, message *sse.Message) *StreamPayload {
 	return &payload
 }
 
-func newTestInstanceStore(t *testing.T) (*models.InstanceStore, func()) {
+func newTestInstanceStore(t *testing.T) *models.InstanceStore {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "sse-manager-test.db")
-	db, err := database.New(dbPath)
-	require.NoError(t, err, "failed to create test database")
+	db := testdb.NewMigratedSQLite(t, "sse-manager-test")
 
 	key := make([]byte, 32)
 	for i := range key {
@@ -526,9 +521,7 @@ func newTestInstanceStore(t *testing.T) (*models.InstanceStore, func()) {
 	store, err := models.NewInstanceStore(db, key)
 	require.NoError(t, err, "failed to create instance store")
 
-	return store, func() {
-		_ = db.Close()
-	}
+	return store
 }
 
 func TestMarkSyncFailure_ExponentialBackoff(t *testing.T) {
@@ -853,49 +846,6 @@ func TestStreamManager_ShutdownDuringActiveOperations(t *testing.T) {
 
 	// Verify shutdown completed
 	require.True(t, manager.closing.Load(), "manager should be marked as closing")
-}
-
-func TestStreamManager_ProcessGroupCoalescing(t *testing.T) {
-	// Test the coalescing behavior of enqueueGroup
-	// Multiple rapid enqueues should coalesce into pending state
-
-	group := &subscriptionGroup{
-		key:     "test-group",
-		options: StreamOptions{InstanceID: 1, Page: 0, Limit: 50},
-		subs:    make(map[string]*subscriptionState),
-	}
-
-	// Simulate rapid enqueues without starting the processGroup goroutine
-	// by directly testing the pending state coalescing
-
-	// First enqueue sets hasPending and sends
-	group.mu.Lock()
-	group.pendingMeta = &StreamMeta{InstanceID: 1, Timestamp: time.Now()}
-	group.hasPending = true
-	group.sending = true // Simulate that processGroup is already running
-	group.mu.Unlock()
-
-	// Second enqueue should just update pending state, not spawn new goroutine
-	newMeta := &StreamMeta{InstanceID: 1, Timestamp: time.Now().Add(time.Second)}
-	group.mu.Lock()
-	group.pendingMeta = newMeta
-	group.hasPending = true
-	// sending stays true - no new goroutine needed
-	group.mu.Unlock()
-
-	// Third enqueue - same behavior
-	finalMeta := &StreamMeta{InstanceID: 1, Timestamp: time.Now().Add(2 * time.Second)}
-	group.mu.Lock()
-	group.pendingMeta = finalMeta
-	group.hasPending = true
-	group.mu.Unlock()
-
-	// Verify the coalescing - only the final meta should be present
-	group.mu.Lock()
-	require.True(t, group.hasPending, "should have pending update")
-	require.True(t, group.sending, "should still be marked as sending")
-	require.Equal(t, finalMeta, group.pendingMeta, "should have coalesced to final meta")
-	group.mu.Unlock()
 }
 
 func TestUnregister_MultipleSubscribersInSameGroup(t *testing.T) {

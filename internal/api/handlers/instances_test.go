@@ -50,7 +50,7 @@ func TestGetInstanceCapabilitiesPreservesBackoffMessage(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	handler := NewInstancesHandler(instanceStore, nil, nil, clientPool, nil, nil)
+	handler := NewInstancesHandler(instanceStore, nil, nil, clientPool, nil, nil, nil, nil)
 	router := chi.NewRouter()
 	router.Get("/api/instances/{instanceID}/capabilities", handler.GetInstanceCapabilities)
 
@@ -105,7 +105,7 @@ func TestCreateInstanceRejectsUnknownClientType(t *testing.T) {
 	instanceStore, err := models.NewInstanceStore(db, []byte("01234567890123456789012345678901"))
 	require.NoError(t, err)
 
-	handler := NewInstancesHandler(instanceStore, nil, nil, nil, nil, nil)
+	handler := NewInstancesHandler(instanceStore, nil, nil, nil, nil, nil, nil, nil)
 	router := chi.NewRouter()
 	router.Post("/api/instances", handler.CreateInstance)
 
@@ -134,7 +134,7 @@ func TestUpdateInstanceRejectsClientTypeChange(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	handler := NewInstancesHandler(instanceStore, nil, nil, nil, nil, nil)
+	handler := NewInstancesHandler(instanceStore, nil, nil, nil, nil, nil, nil, nil)
 	router := chi.NewRouter()
 	router.Put("/api/instances/{instanceID}", handler.UpdateInstance)
 

@@ -38,6 +38,7 @@ Make sure you have the following dependencies installed before setting up your d
   - There is no need for force pushing or rebasing. We squash commits on merge to keep the history clean and manageable.
 - **Pull Requests:** Open a pull request with a clear description of your changes. Reference any related issues.
   - Mark it as Draft if it's still in progress.
+  - Fill in the [PR template](pull_request_template.md). A CI check fails until the PR body has the Description, Breaking change, Behaviour change, Performance, and AI disclosure sections. Write "No breaking change." or "No behaviour change." when that applies. When you edit the PR body, the check runs again.
 - **Code Review:** Be open to feedback during the code review process.
 
 ## Development environment
@@ -139,6 +140,18 @@ Run all non-integration tests:
 ```shell
 go test -v ./...
 ```
+
+Run Postgres integration tests with a temporary server:
+
+```shell
+make test-postgres
+```
+
+This command downloads and caches Postgres 17 on first use, then stops the server after the tests finish.
+Each Postgres test keeps its isolated schema. CI runs this command on Linux.
+Use `PostgresIntegration` in the names of tests that need a Postgres server so this command selects them.
+Set `QUI_TEST_POSTGRES_DSN` to use an existing test database instead.
+To select tests, pass Go test arguments to `go run ./internal/testutil/postgres`.
 
 ## AI-assisted contributions
 

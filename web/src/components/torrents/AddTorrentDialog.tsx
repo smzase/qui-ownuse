@@ -41,7 +41,7 @@ import { useInstanceMetadata, type InstanceMetadata } from "@/hooks/useInstanceM
 import { useInstances } from "@/hooks/useInstances"
 import { usePathAutocomplete } from "@/hooks/usePathAutocomplete"
 import { usePersistedBulkAddTorrentInstances } from "@/hooks/usePersistedBulkAddTorrentInstances"
-import { usePersistedStartPaused } from "@/hooks/usePersistedStartPaused"
+import { useAddTorrentPreferences } from "@/hooks/usePreferenceValues"
 import { api } from "@/lib/api"
 import { getCachedInstanceMetadata, setCachedInstanceMetadata } from "@/lib/instance-metadata-cache"
 import { canOfferManualCrossSeed } from "@/lib/manual-cross-seed"
@@ -291,9 +291,6 @@ export function AddTorrentDialog({
     return selectableInstances.filter((instance) => selectedIdSet.has(instance.id))
   }, [bulkSelectedInstanceIds, selectableInstances])
   const primaryInstanceId = isBulkMode ? selectedBulkInstances[0]?.id ?? selectableInstances[0]?.id ?? instanceId : instanceId
-  // NOTE: Use localStorage-persisted preference instead of qBittorrent's preference
-  // This works around qBittorrent API not supporting start_paused_enabled setting
-  const [startPausedEnabled] = usePersistedStartPaused(primaryInstanceId, false)
 
   // Use controlled state if provided, otherwise use internal state
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
@@ -336,7 +333,8 @@ export function AddTorrentDialog({
   const metadata = isBulkMode ? loadedBulkMetadata[0] ?? singleMetadata : singleMetadata
   const categories = isBulkMode ? bulkCategories : metadata?.categories
   const availableTags = isBulkMode && loadedBulkMetadata.length > 0 ? getAvailableTags(loadedBulkMetadata) : metadata?.tags
-  const preferences = metadata?.preferences
+  const addTorrentPreferences = useAddTorrentPreferences(primaryInstanceId, { fetchIfMissing: false })
+  const preferenceDefaults = addTorrentPreferences.defaults
 
   const { data: capabilities } = useInstanceCapabilities(primaryInstanceId)
   const targetInstances = useMemo(
@@ -725,8 +723,8 @@ export function AddTorrentDialog({
       const autoTMM = supportsQbittorrentOnlyOptions ? data.autoTMM : undefined
       // When autoTMM is enabled, temp path settings aren't visible/relevant
       const tempPathChanged =
-        supportsQbittorrentOnlyOptions && !autoTMM && (data.tempPathEnabled !== (preferences?.temp_path_enabled ?? false) ||
-        (data.tempPathEnabled && data.tempPath !== (preferences?.temp_path || "")))
+        supportsQbittorrentOnlyOptions && !autoTMM && (data.tempPathEnabled !== preferenceDefaults.tempPathEnabled ||
+        (data.tempPathEnabled && data.tempPath !== preferenceDefaults.tempPath))
 
       const submitData: Parameters<typeof api.addTorrent>[1] = {
         startPaused: data.startPaused,
@@ -912,9 +910,7 @@ export function AddTorrentDialog({
       urls: "",
       category: "",
       tags: [] as string[],
-      startPaused: startPausedEnabled,
-      autoTMM: preferences?.auto_tmm_enabled ?? true,
-      savePath: preferences?.save_path || "",
+      ...preferenceDefaults,
       skipHashCheck: false,
       sequentialDownload: false,
       firstLastPiecePrio: false,
@@ -922,10 +918,7 @@ export function AddTorrentDialog({
       limitDownloadSpeed: 0,
       limitRatio: 0,
       limitSeedTime: 0,
-      contentLayout: preferences?.torrent_content_layout || "",
       rename: "",
-      tempPathEnabled: preferences?.temp_path_enabled ?? false,
-      tempPath: preferences?.temp_path || "",
       indexerId: undefined as number | undefined,
     },
     onSubmit: async ({ value }) => {
@@ -965,6 +958,25 @@ export function AddTorrentDialog({
 
     checkForDuplicates(currentFiles, currentUrls)
   }, [bulkSelectedInstanceIds, checkForDuplicates, form, isBulkMode, open])
+  // The dialog can mount before instance metadata resolves (magnet handler route),
+  // where defaultValues fall back to the hardcoded values. Seed the preference-derived
+  // fields again when preferences land, skipping anything the user already changed.
+  const seededInstanceRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!addTorrentPreferences.loaded || seededInstanceRef.current === primaryInstanceId) return
+    seededInstanceRef.current = primaryInstanceId
+
+    // Seeding is not a user edit, so leave the field meta pristine.
+    const pristine = (field: keyof typeof preferenceDefaults) => !form.getFieldMeta(field)?.isDirty
+    const opts = { dontUpdateMeta: true }
+
+    if (pristine("autoTMM")) form.setFieldValue("autoTMM", preferenceDefaults.autoTMM, opts)
+    if (pristine("savePath")) form.setFieldValue("savePath", preferenceDefaults.savePath, opts)
+    if (pristine("contentLayout")) form.setFieldValue("contentLayout", preferenceDefaults.contentLayout, opts)
+    if (pristine("tempPathEnabled")) form.setFieldValue("tempPathEnabled", preferenceDefaults.tempPathEnabled, opts)
+    if (pristine("tempPath")) form.setFieldValue("tempPath", preferenceDefaults.tempPath, opts)
+    if (pristine("startPaused")) form.setFieldValue("startPaused", preferenceDefaults.startPaused, opts)
+  }, [form, primaryInstanceId, addTorrentPreferences.loaded, preferenceDefaults])
 
   const setSavePath = useCallback((path: string) => {
     form.setFieldValue("savePath", path)
@@ -982,6 +994,7 @@ export function AddTorrentDialog({
     highlightedIndex: saveHighlightedIndex,
     showSuggestions: showSaveSuggestions,
     inputRef: savePathInputRef,
+    listRef: savePathListRef,
   } = usePathAutocomplete(setSavePath, primaryInstanceId);
 
   const {
@@ -992,6 +1005,7 @@ export function AddTorrentDialog({
     highlightedIndex: tempHighlightedIndex,
     showSuggestions: showTempSuggestions,
     inputRef: tempPathInputRef,
+    listRef: tempPathListRef,
   } = usePathAutocomplete(setTempPath, primaryInstanceId);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -1748,7 +1762,7 @@ export function AddTorrentDialog({
                                 <Input
                                   id="savePath"
                                   ref={supportsPathAutocomplete ? savePathInputRef : undefined}
-                                  placeholder={preferences?.save_path || t("addTorrentDialog.options.savePathPlaceholder")}
+                                  placeholder={preferenceDefaults.savePath || t("addTorrentDialog.options.savePathPlaceholder")}
                                   autoComplete="off"
                                   spellCheck={false}
                                   value={field.state.value}
@@ -1764,7 +1778,7 @@ export function AddTorrentDialog({
 
                                 {supportsPathAutocomplete && showSaveSuggestions && saveSuggestions.length > 0 && (
                                   <div className="relative">
-                                    <div className="absolute z-50 mt-1 left-0 right-0 rounded-md border bg-popover text-popover-foreground shadow-md">
+                                    <div ref={savePathListRef} className="absolute z-50 mt-1 left-0 right-0 rounded-md border bg-popover text-popover-foreground shadow-md">
                                       <div className="max-h-55 overflow-y-auto py-1">
                                         {saveSuggestions.map((entry, idx) => (
                                           <button
@@ -1823,7 +1837,7 @@ export function AddTorrentDialog({
                                           <Input
                                             id="tempPath"
                                             ref={supportsPathAutocomplete ? tempPathInputRef : undefined}
-                                            placeholder={preferences?.temp_path || t("addTorrentDialog.options.tempPathPlaceholder")}
+                                            placeholder={preferenceDefaults.tempPath || t("addTorrentDialog.options.tempPathPlaceholder")}
                                             autoComplete="off"
                                             spellCheck={false}
                                             value={field.state.value}
@@ -1839,7 +1853,7 @@ export function AddTorrentDialog({
 
                                           {supportsPathAutocomplete && showTempSuggestions && tempSuggestions.length > 0 && (
                                             <div className="relative">
-                                              <div className="absolute z-50 mt-1 left-0 right-0 rounded-md border bg-popover text-popover-foreground shadow-md">
+                                              <div ref={tempPathListRef} className="absolute z-50 mt-1 left-0 right-0 rounded-md border bg-popover text-popover-foreground shadow-md">
                                                 <div className="max-h-55 overflow-y-auto py-1">
                                                   {tempSuggestions.map((entry, idx) => (
                                                     <button
@@ -2043,15 +2057,15 @@ export function AddTorrentDialog({
             </Tabs>
 
             {/* Auto-applied Settings Info - Compact */}
-            {(preferences?.add_trackers_enabled && preferences?.add_trackers) || preferences?.excluded_file_names_enabled ? (
+            {addTorrentPreferences.autoAddTrackers || addTorrentPreferences.excludedFileNamesEnabled ? (
               <div className="bg-muted rounded-md p-3 text-xs text-muted-foreground">
                 <p className="font-medium mb-1">{t("addTorrentDialog.options.autoAppliedTitle")}</p>
                 <div className="space-y-0.5">
-                  {preferences?.add_trackers_enabled && preferences?.add_trackers && (
+                  {addTorrentPreferences.autoAddTrackers && (
                     <div>{t("addTorrentDialog.options.autoAddTrackers")}</div>
                   )}
-                  {preferences?.excluded_file_names_enabled && preferences?.excluded_file_names && (
-                    <div>{t("addTorrentDialog.options.fileExclusions", { value: preferences.excluded_file_names })}</div>
+                  {addTorrentPreferences.excludedFileNamesEnabled && addTorrentPreferences.excludedFileNames && (
+                    <div>{t("addTorrentDialog.options.fileExclusions", { value: addTorrentPreferences.excludedFileNames })}</div>
                   )}
                 </div>
               </div>

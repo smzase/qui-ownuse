@@ -17,12 +17,12 @@ import {
   filterFn_inNumberRange,
   filterFn_includesString,
   filterFn_weakEquals,
-  globalFilteringFeature,
   rowSelectionFeature,
   rowSortingFeature,
   sortFn_alphanumeric,
   sortFn_text,
   tableFeatures,
+  type Column,
   type ColumnDef,
   type Header,
   type Row,
@@ -44,7 +44,6 @@ export const sortableDetailsTableFeatures = tableFeatures({
 
 export const torrentTableFeatures = tableFeatures({
   columnFilteringFeature,
-  globalFilteringFeature,
   columnOrderingFeature,
   columnSizingFeature,
   columnResizingFeature,
@@ -67,5 +66,6 @@ export const torrentTableFeatures = tableFeatures({
 export type TorrentTableFeatures = typeof torrentTableFeatures
 export type TorrentTable = Table<TorrentTableFeatures, Torrent>
 export type TorrentRow = Row<TorrentTableFeatures, Torrent>
+export type TorrentTableColumn = Column<TorrentTableFeatures, Torrent, unknown>
 export type TorrentTableColumnDef = ColumnDef<TorrentTableFeatures, Torrent, unknown>
 export type TorrentTableHeader = Header<TorrentTableFeatures, Torrent, unknown>

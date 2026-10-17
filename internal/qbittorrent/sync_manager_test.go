@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/autobrr/go-cache/ttlcache"
 	qbt "github.com/autobrr/go-qbittorrent"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -601,67 +603,6 @@ func TestCalculateCountsFromTorrentsWithTrackersIgnoresHealthCacheWhenUnsupporte
 	require.Zero(t, counts.Status["tracker_error"])
 }
 
-func TestApplyTrackerHealthRefreshResultSkipsPartialHydration(t *testing.T) {
-	t.Parallel()
-
-	started := time.Now()
-	sm := &SyncManager{
-		trackerHealthCache: map[int]*TrackerHealthCounts{
-			7: {
-				Unregistered:    2,
-				TrackerDown:     1,
-				TrackerError:    0,
-				UnregisteredSet: map[string]struct{}{"old-unregistered": {}, "old-unregistered-2": {}},
-				TrackerDownSet:  map[string]struct{}{"old-down": {}},
-				TrackerErrorSet: make(map[string]struct{}),
-				UpdatedAt:       started.Add(-time.Minute),
-			},
-		},
-		validatedTrackerMapping: map[int]*ValidatedTrackerMapping{
-			7: {
-				HashToDomains: map[string]map[string]struct{}{
-					"old-unregistered": {"old.example": {}},
-					"old-down":         {"old.example": {}},
-				},
-				DomainToHashes: map[string]map[string]struct{}{
-					"old.example": {"old-unregistered": {}, "old-down": {}},
-				},
-				UpdatedAt: started.Add(-time.Minute),
-			},
-		},
-	}
-	torrents := []qbt.Torrent{
-		{Hash: "hash-a", Tracker: "https://new.example/announce"},
-		{Hash: "hash-b", Tracker: "https://missing.example/announce"},
-	}
-	enriched := []qbt.Torrent{
-		{
-			Hash: "hash-a",
-			Trackers: []qbt.TorrentTracker{
-				{Url: "https://new.example/announce", Status: qbt.TrackerStatusNotWorking},
-			},
-		},
-	}
-
-	applied := sm.applyTrackerHealthRefreshResult(7, torrents, enriched, []string{"hash-b"}, started)
-
-	require.False(t, applied)
-
-	cached := sm.GetTrackerHealthCounts(7)
-	require.NotNil(t, cached)
-	require.Equal(t, 2, cached.Unregistered)
-	require.Equal(t, 1, cached.TrackerDown)
-	require.Contains(t, cached.UnregisteredSet, "old-unregistered")
-	require.Contains(t, cached.TrackerDownSet, "old-down")
-	require.NotContains(t, cached.TrackerDownSet, "hash-a")
-
-	mapping := sm.getValidatedTrackerMapping(7)
-	require.NotNil(t, mapping)
-	require.Contains(t, mapping.DomainToHashes, "old.example")
-	require.NotContains(t, mapping.DomainToHashes, "new.example")
-	require.NotContains(t, mapping.HashToDomains, "hash-a")
-}
-
 func TestCalculateCountsFromTorrentsWithTrackersClearsAllExcludedValidatedDomain(t *testing.T) {
 	t.Parallel()
 
@@ -910,48 +851,16 @@ func TestNormalizeHashes(t *testing.T) {
 func TestBulkActionRetryAttempts(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.Equal(t, bulkActionSyncRetryAttempts, bulkActionRetryAttempts(ctx, 0, 1))
 	require.Equal(t, bulkActionSyncRetryAttempts, bulkActionRetryAttempts(ctx, 1, 2))
 	require.Equal(t, bulkActionAddRetryAttempts, bulkActionRetryAttempts(WithPostAddBulkActionRetry(ctx), 0, 1))
 	require.Equal(t, bulkActionAddRetryAttempts, bulkActionRetryAttempts(WithPostAddBulkActionRetry(ctx), 1, 2))
 	require.Equal(t, bulkActionSyncRetryAttempts, bulkActionRetryAttempts(WithPostAddBulkActionRetry(ctx), 2, 2))
-	retryCtx, cancelRetry := withoutCancelPreservingDeadline(WithPostAddBulkActionRetry(ctx))
-	defer cancelRetry()
+	retryCtx := context.WithoutCancel(WithPostAddBulkActionRetry(ctx))
 	require.Equal(t, bulkActionAddRetryAttempts, bulkActionRetryAttempts(retryCtx, 1, 2))
 	require.Equal(t, 0, bulkActionRetryAttempts(ctx, 0, 0))
-}
-
-func TestWithoutCancelPreservingDeadlineDetachesDeadlineAndKeepsRetryValue(t *testing.T) {
-	t.Parallel()
-
-	deadline := time.Now().Add(time.Hour)
-	parentCtx, cancelParent := context.WithDeadline(WithPostAddBulkActionRetry(context.Background()), deadline)
-	cancelParent()
-
-	retryCtx, cancelRetry := withoutCancelPreservingDeadline(parentCtx)
-	defer cancelRetry()
-
-	_, ok := retryCtx.Deadline()
-	require.False(t, ok)
-	require.NoError(t, retryCtx.Err())
-	require.True(t, postAddBulkActionRetry(retryCtx))
-}
-
-func TestWithoutCancelPreservingDeadlineDropsExpiredDeadline(t *testing.T) {
-	t.Parallel()
-
-	deadline := time.Now().Add(-time.Nanosecond)
-	parentCtx, cancelParent := context.WithDeadline(context.Background(), deadline)
-	defer cancelParent()
-
-	retryCtx, cancelRetry := withoutCancelPreservingDeadline(parentCtx)
-	defer cancelRetry()
-
-	_, ok := retryCtx.Deadline()
-	require.False(t, ok)
-	require.NoError(t, retryCtx.Err())
 }
 
 func TestBulkActionSyncRetryStopsAfterAttemptLimit(t *testing.T) {
@@ -1051,12 +960,11 @@ func TestBulkActionSyncRetryStopsAfterAttemptLimitOnSyncFailure(t *testing.T) {
 func TestBulkActionSyncRetryKeepsCriticalBudgetWithDecoupledContext(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	syncer := &bulkActionRetrySyncer{}
-	retryCtx, cancelRetry := withoutCancelPreservingDeadline(ctx)
-	defer cancelRetry()
+	retryCtx := context.WithoutCancel(ctx)
 	resolved, variants := bulkActionSyncRetry(
 		retryCtx,
 		syncer,
@@ -1841,7 +1749,7 @@ func (fm *stubFilesManager) GetCachedFiles(context.Context, int, string) (qbt.To
 	return nil, nil
 }
 
-func (fm *stubFilesManager) GetCachedFilesBatch(_ context.Context, _ int, hashes []string) (map[string]qbt.TorrentFiles, []string, error) {
+func (fm *stubFilesManager) GetCachedFilesBatch(_ context.Context, _ int, hashes []string, _ time.Duration) (map[string]qbt.TorrentFiles, []string, error) {
 	fm.lastHashes = append([]string(nil), hashes...)
 
 	cached := make(map[string]qbt.TorrentFiles, len(hashes))
@@ -1887,7 +1795,7 @@ func (fm *aliasingFilesManager) GetCachedFiles(context.Context, int, string) (qb
 	return nil, nil
 }
 
-func (fm *aliasingFilesManager) GetCachedFilesBatch(_ context.Context, _ int, hashes []string) (map[string]qbt.TorrentFiles, []string, error) {
+func (fm *aliasingFilesManager) GetCachedFilesBatch(_ context.Context, _ int, hashes []string, _ time.Duration) (map[string]qbt.TorrentFiles, []string, error) {
 	fm.lastHashes = append([]string(nil), hashes...)
 
 	cached := make(map[string]qbt.TorrentFiles, len(hashes))
@@ -2011,7 +1919,7 @@ func TestSortTorrentsByTracker_WithCustomDisplayNames(t *testing.T) {
 		{Hash: "hash5", Tracker: "", Name: "Torrent E"},
 	}
 
-	sm.sortTorrentsByTracker(torrents, false)
+	sm.sortTorrents(torrents, "tracker", false, false, nil)
 
 	// Expected order (ascending):
 	// 1. "another tracker" (another.tracker.org)
@@ -2027,7 +1935,7 @@ func TestSortTorrentsByTracker_WithCustomDisplayNames(t *testing.T) {
 	require.Equal(t, "hash5", torrents[4].Hash, "Empty tracker should be last")
 
 	// Test descending order - note: torrents without trackers always sort to end (hasDomain check is not reversed)
-	sm.sortTorrentsByTracker(torrents, true)
+	sm.sortTorrents(torrents, "tracker", true, false, nil)
 
 	require.Equal(t, "hash2", torrents[0].Hash, "Unknown tracker should be first in desc (z > u > m > a)")
 	require.Equal(t, "hash3", torrents[1].Hash, "My Tracker (tracker2) should be second in desc")
@@ -2056,7 +1964,7 @@ func TestSortTorrentsByTracker_MergedDomainsStayTogether(t *testing.T) {
 		{Hash: "hash4", Tracker: "https://other.site.net/announce", Name: "From Other"},
 	}
 
-	sm.sortTorrentsByTracker(torrents, false)
+	sm.sortTorrents(torrents, "tracker", false, false, nil)
 
 	// "other.site.net" (o) comes before "private tracker" (p) alphabetically
 	// Within "Private Tracker" group, domains are sorted alphabetically (backup < new < old)
@@ -2078,7 +1986,7 @@ func TestSortTorrentsByTracker_NoCustomizations(t *testing.T) {
 		{Hash: "hash3", Tracker: "https://mango.com/announce", Name: "Torrent C"},
 	}
 
-	sm.sortTorrentsByTracker(torrents, false)
+	sm.sortTorrents(torrents, "tracker", false, false, nil)
 
 	// Should sort by domain alphabetically
 	require.Equal(t, "hash2", torrents[0].Hash, "apple.com should be first")
@@ -2102,7 +2010,7 @@ func TestSortTorrentsByTracker_EqualKeysKeepInputOrder(t *testing.T) {
 	}
 	torrents = append(torrents, qbt.Torrent{Hash: "hash1", Tracker: "https://apple.com/announce", Name: "has-tracker"})
 
-	sm.sortTorrentsByTracker(torrents, false)
+	sm.sortTorrents(torrents, "tracker", false, false, nil)
 
 	require.Equal(t, "has-tracker", torrents[0].Name, "the row with a tracker sorts ahead of the pending ones")
 	for i := range pending {
@@ -2124,22 +2032,21 @@ func TestSortCrossInstanceTorrentsByTracker_EmptyTrackersGoToEnd(t *testing.T) {
 	}
 
 	// Test ascending: empty trackers should go to the end
-	sm.sortCrossInstanceTorrentsByTracker(torrents, false)
+	sm.sortCrossInstanceTorrents(torrents, "tracker", false, false)
 
 	require.Equal(t, "hash3", torrents[0].Hash, "apple.com should be first")
 	require.Equal(t, "hash2", torrents[1].Hash, "zebra.com should be second")
-	require.Equal(t, "hash1", torrents[2].Hash, "empty tracker should be third (sorted by instance then name)")
+	require.Equal(t, "hash1", torrents[2].Hash, "empty tracker should be third (sorted by hash)")
 	require.Equal(t, "hash4", torrents[3].Hash, "empty tracker should be fourth")
 
 	// Test descending: empty trackers should STILL go to the end (not beginning)
-	// Within the empty group, they sort by instance name then name in descending order
-	sm.sortCrossInstanceTorrentsByTracker(torrents, true)
+	// Within the empty group, the hash tiebreak flips too
+	sm.sortCrossInstanceTorrents(torrents, "tracker", true, false)
 
 	require.Equal(t, "hash2", torrents[0].Hash, "zebra.com should be first in desc")
 	require.Equal(t, "hash3", torrents[1].Hash, "apple.com should be second in desc")
-	// Empty trackers at end, but within empty group: Instance2 > Instance1 in desc
-	require.Equal(t, "hash4", torrents[2].Hash, "empty tracker Instance2 should be third")
-	require.Equal(t, "hash1", torrents[3].Hash, "empty tracker Instance1 should be fourth")
+	require.Equal(t, "hash4", torrents[2].Hash, "empty tracker hash4 should be third")
+	require.Equal(t, "hash1", torrents[3].Hash, "empty tracker hash1 should be fourth")
 }
 
 func TestSortCrossInstanceTorrentsByTracker_WithCustomNames(t *testing.T) {
@@ -2158,7 +2065,7 @@ func TestSortCrossInstanceTorrentsByTracker_WithCustomNames(t *testing.T) {
 		{TorrentView: &TorrentView{Torrent: &qbt.Torrent{Hash: "hash3", Tracker: "https://mango.com/announce", Name: "Torrent C"}}, InstanceName: "Instance1"},
 	}
 
-	sm.sortCrossInstanceTorrentsByTracker(torrents, false)
+	sm.sortCrossInstanceTorrents(torrents, "tracker", false, false)
 
 	// ABC Tracker (zebra.com) comes before mango.com before XYZ Tracker (apple.com)
 	require.Equal(t, "hash1", torrents[0].Hash, "ABC Tracker (zebra.com) should be first")
@@ -2176,7 +2083,7 @@ func TestSortCrossInstanceTorrentsByTracker_UnknownTrackersGoToEnd(t *testing.T)
 		{TorrentView: &TorrentView{Torrent: &qbt.Torrent{Hash: "hash2", Tracker: "https://valid.com/announce", Name: "Valid"}}, InstanceName: "Instance1"},
 	}
 
-	sm.sortCrossInstanceTorrentsByTracker(torrents, false)
+	sm.sortCrossInstanceTorrents(torrents, "tracker", false, false)
 
 	require.Equal(t, "hash2", torrents[0].Hash, "valid tracker should come first")
 	require.Equal(t, "hash1", torrents[1].Hash, "unknown tracker should go to end")
@@ -2256,14 +2163,14 @@ func TestSortCrossInstanceTorrents_CommonFields(t *testing.T) {
 		{name: "num_complete asc", sort: "num_complete", desc: false, firstHash: "hash-beta", lastHash: "hash-gamma"},
 		{name: "priority asc keeps zero last", sort: "priority", desc: false, firstHash: "hash-gamma", lastHash: "hash-beta"},
 		{name: "eta asc keeps infinity last", sort: "eta", desc: false, firstHash: "hash-alpha", lastHash: "hash-beta"},
-		{name: "private desc", sort: "private", desc: true, firstHash: "hash-beta", lastHash: "hash-gamma"},
+		{name: "private desc flips the hash tiebreak", sort: "private", desc: true, firstHash: "hash-beta", lastHash: "hash-alpha"},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			torrents := build()
-			sm.sortCrossInstanceTorrents(torrents, tc.sort, tc.desc)
+			sm.sortCrossInstanceTorrents(torrents, tc.sort, tc.desc, false)
 			require.Equal(t, tc.firstHash, torrents[0].Hash)
 			require.Equal(t, tc.lastHash, torrents[len(torrents)-1].Hash)
 		})
@@ -2289,11 +2196,11 @@ func TestSortCrossInstanceTorrentsStateUsesTrackerHealthPriority(t *testing.T) {
 		{
 			TorrentView: &TorrentView{
 				Torrent: &qbt.Torrent{
-					Hash:  "hash-error",
-					Name:  "Tracker Error",
-					State: qbt.TorrentStatePausedUp,
+					Hash:     "hash-error",
+					Name:     "Tracker Error",
+					State:    qbt.TorrentStatePausedUp,
+					Trackers: []qbt.TorrentTracker{{Url: "https://tracker.example.invalid/announce", Status: qbt.TrackerStatusTrackerError, Message: "ratio too low"}},
 				},
-				TrackerHealth: TrackerHealthError,
 			},
 			InstanceID:   2,
 			InstanceName: "Two",
@@ -2301,18 +2208,18 @@ func TestSortCrossInstanceTorrentsStateUsesTrackerHealthPriority(t *testing.T) {
 		{
 			TorrentView: &TorrentView{
 				Torrent: &qbt.Torrent{
-					Hash:  "hash-unregistered",
-					Name:  "Unregistered",
-					State: qbt.TorrentStatePausedUp,
+					Hash:     "hash-unregistered",
+					Name:     "Unregistered",
+					State:    qbt.TorrentStatePausedUp,
+					Trackers: []qbt.TorrentTracker{{Url: "https://tracker.example.invalid/announce", Status: qbt.TrackerStatusNotWorking, Message: "Unregistered torrent"}},
 				},
-				TrackerHealth: TrackerHealthUnregistered,
 			},
 			InstanceID:   3,
 			InstanceName: "Three",
 		},
 	}
 
-	sm.sortCrossInstanceTorrents(torrents, "state", false)
+	sm.sortCrossInstanceTorrents(torrents, "state", false, false)
 
 	require.Equal(t, "hash-unregistered", torrents[0].Hash)
 	require.Equal(t, "hash-error", torrents[1].Hash)
@@ -2333,7 +2240,7 @@ func TestSortTorrentsByTimestamp_Tiebreaker(t *testing.T) {
 	}
 
 	// Ascending: state priority (downloading < uploading < paused), then name, then hash
-	sm.sortTorrentsByTimestamp(torrents, false, func(t qbt.Torrent) int64 { return t.LastActivity })
+	sm.sortTorrents(torrents, "last_activity", false, false, nil)
 
 	// Downloading has lower priority than uploading, which has lower than paused
 	// hash2 and hash4 both downloading with name "Apple", sorted by hash
@@ -2344,7 +2251,7 @@ func TestSortTorrentsByTimestamp_Tiebreaker(t *testing.T) {
 
 	// Descending: same fallback order (state priority, name A-Z, hash)
 	// All have same timestamp, so order is identical to ascending
-	sm.sortTorrentsByTimestamp(torrents, true, func(t qbt.Torrent) int64 { return t.LastActivity })
+	sm.sortTorrents(torrents, "last_activity", true, false, nil)
 
 	require.Equal(t, "hash2", torrents[0].Hash, "downloading 'Apple' first by state")
 	require.Equal(t, "hash4", torrents[1].Hash, "downloading 'Apple' second by hash")
@@ -2364,14 +2271,14 @@ func TestSortTorrentsByTimestamp_ZeroSortsNaturally(t *testing.T) {
 	}
 
 	// Ascending (oldest first): 0 at start as it's the smallest value
-	sm.sortTorrentsByTimestamp(torrents, false, func(t qbt.Torrent) int64 { return t.LastActivity })
+	sm.sortTorrents(torrents, "last_activity", false, false, nil)
 
 	require.Equal(t, "hash2", torrents[0].Hash, "0 (no activity) should be at start for ascending")
 	require.Equal(t, "hash1", torrents[1].Hash, "1000 should be second")
 	require.Equal(t, "hash3", torrents[2].Hash, "2000 should be last")
 
 	// Descending (newest first): 0 at end as it's the smallest value
-	sm.sortTorrentsByTimestamp(torrents, true, func(t qbt.Torrent) int64 { return t.LastActivity })
+	sm.sortTorrents(torrents, "last_activity", true, false, nil)
 
 	require.Equal(t, "hash3", torrents[0].Hash, "2000 should be first for descending")
 	require.Equal(t, "hash1", torrents[1].Hash, "1000 should be second")
@@ -2384,23 +2291,23 @@ func TestSortTorrentsByTimestamp_NegativeOneSortsNaturally(t *testing.T) {
 	sm := NewSyncManager(nil, nil)
 
 	torrents := []qbt.Torrent{
-		{Hash: "hash1", Name: "Completed Early", CompletionOn: 1000, State: qbt.TorrentStateUploading},
+		{Hash: "hash1", Name: "Completed Early", CompletionOn: 1_700_000_000, State: qbt.TorrentStateUploading},
 		{Hash: "hash2", Name: "Never Completed", CompletionOn: -1, State: qbt.TorrentStateDownloading},
-		{Hash: "hash3", Name: "Completed Late", CompletionOn: 2000, State: qbt.TorrentStateUploading},
+		{Hash: "hash3", Name: "Completed Late", CompletionOn: 1_700_001_000, State: qbt.TorrentStateUploading},
 	}
 
 	// Ascending: -1 at start as it's the smallest value
-	sm.sortTorrentsByTimestamp(torrents, false, func(t qbt.Torrent) int64 { return t.CompletionOn })
+	sm.sortTorrents(torrents, "completion_on", false, false, nil)
 
 	require.Equal(t, "hash2", torrents[0].Hash, "-1 (never completed) should be at start for ascending")
-	require.Equal(t, "hash1", torrents[1].Hash, "1000 should be second")
-	require.Equal(t, "hash3", torrents[2].Hash, "2000 should be last")
+	require.Equal(t, "hash1", torrents[1].Hash, "the early completion should be second")
+	require.Equal(t, "hash3", torrents[2].Hash, "the late completion should be last")
 
 	// Descending: -1 at end as it's the smallest value
-	sm.sortTorrentsByTimestamp(torrents, true, func(t qbt.Torrent) int64 { return t.CompletionOn })
+	sm.sortTorrents(torrents, "completion_on", true, false, nil)
 
-	require.Equal(t, "hash3", torrents[0].Hash, "2000 should be first for descending")
-	require.Equal(t, "hash1", torrents[1].Hash, "1000 should be second")
+	require.Equal(t, "hash3", torrents[0].Hash, "the late completion should be first for descending")
+	require.Equal(t, "hash1", torrents[1].Hash, "the early completion should be second")
 	require.Equal(t, "hash2", torrents[2].Hash, "-1 (never completed) should be at end for descending")
 }
 
@@ -2417,12 +2324,9 @@ func TestSortTorrentsByTimestamp_TruncationGroupsSameInterval(t *testing.T) {
 		{Hash: "hash3", Name: "Mango", LastActivity: 119, State: qbt.TorrentStateDownloading},
 	}
 
-	// Truncating getter (same as production code for last_activity)
-	getLastActivity := func(t qbt.Torrent) int64 { return t.LastActivity / 60 }
-
 	// Ascending: bucket 1 (61, 119) before bucket 2 (120)
 	// Within bucket 1: falls back to state priority (downloading < uploading)
-	sm.sortTorrentsByTimestamp(torrents, false, getLastActivity)
+	sm.sortTorrents(torrents, "last_activity", false, false, nil)
 
 	require.Equal(t, "hash3", torrents[0].Hash, "bucket 1: downloading 'Mango' first by state")
 	require.Equal(t, "hash2", torrents[1].Hash, "bucket 1: uploading 'Apple' second by state")
@@ -2430,7 +2334,7 @@ func TestSortTorrentsByTimestamp_TruncationGroupsSameInterval(t *testing.T) {
 
 	// Descending: bucket 2 (120) before bucket 1 (61, 119)
 	// Within bucket 1: same fallback order (state priority, name A-Z)
-	sm.sortTorrentsByTimestamp(torrents, true, getLastActivity)
+	sm.sortTorrents(torrents, "last_activity", true, false, nil)
 
 	require.Equal(t, "hash1", torrents[0].Hash, "bucket 2: paused 'Zebra' first")
 	require.Equal(t, "hash3", torrents[1].Hash, "bucket 1: downloading 'Mango' by state")
@@ -2438,7 +2342,7 @@ func TestSortTorrentsByTimestamp_TruncationGroupsSameInterval(t *testing.T) {
 }
 
 // Torrents with equal timestamps fall back to state priority, then
-// case-insensitive name, then hash. sortTorrentsByTimestamp resolves those keys
+// case-insensitive name, then hash. The timestamp order resolves those keys
 // up front, so drive the tiebreak through the sort itself.
 func TestSortTorrentsByTimestampTiebreak(t *testing.T) {
 	t.Parallel()
@@ -2489,13 +2393,12 @@ func TestSortTorrentsByTimestampTiebreak(t *testing.T) {
 	}
 
 	sm := &SyncManager{}
-	sameTimestamp := func(qbt.Torrent) int64 { return 42 }
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Feed both orderings so the assertion cannot pass by luck.
 			for _, torrents := range [][]qbt.Torrent{{tt.a, tt.b}, {tt.b, tt.a}} {
-				sm.sortTorrentsByTimestamp(torrents, false, sameTimestamp)
+				sm.sortTorrents(torrents, "added_on", false, false, nil)
 
 				first := tt.a.Hash
 				if tt.expected > 0 {
@@ -2760,7 +2663,7 @@ func TestGetTorrentsWithFiltersSurvivesUnmarshalablePreferences(t *testing.T) {
 // it again, which is only safe while every narrowing step returns a new slice.
 // This pins that invariant end to end, on the prefer=cache path: a searched
 // request must still report sidebar counts for the WHOLE library, and the page
-// must come back sorted although qui skips the library sort for this field.
+// must come back sorted.
 func TestGetTorrentsWithFiltersSearchKeepsWholeLibraryCounts(t *testing.T) {
 	t.Parallel()
 
@@ -2820,8 +2723,7 @@ func TestGetTorrentsWithFiltersSearchKeepsWholeLibraryCounts(t *testing.T) {
 		"the torrent the search dropped must still be counted")
 	require.Equal(t, 2, resp.Counts.Categories["beta"])
 
-	// added_on ascending: 100 before 300. The library sort is skipped for this
-	// field, so this only passes when qui's own sort actually ran.
+	// added_on ascending: 100 before 300.
 	require.Len(t, resp.Torrents, 2)
 	require.Equal(t, "Beta.Three", resp.Torrents[0].Name)
 	require.Equal(t, "Beta.Two", resp.Torrents[1].Name)
@@ -3280,24 +3182,6 @@ func TestRequestCoversWholeLibrary(t *testing.T) {
 	require.False(t, requestCoversWholeLibrary(qbt.TorrentFilterOptions{}))
 }
 
-func TestSetLibrarySortSkipsFieldsQuiResortsItself(t *testing.T) {
-	t.Parallel()
-
-	for _, field := range []string{"name", "tracker", "added_on", "last_activity", "completion_on", "seen_complete", "eta", "priority", "state"} {
-		options := qbt.TorrentFilterOptions{}
-		setLibrarySort(&options, field, "desc")
-		require.Empty(t, options.Sort, field)
-		require.False(t, options.Reverse, field)
-	}
-
-	for _, field := range []string{"size", "ratio", "progress", "dlspeed"} {
-		options := qbt.TorrentFilterOptions{}
-		setLibrarySort(&options, field, "desc")
-		require.Equal(t, field, options.Sort, field)
-		require.True(t, options.Reverse, field)
-	}
-}
-
 // An authoritative mapping with no domains must not fall back to MainData, which
 // is why the getter separates a nil result from an empty one.
 func TestEmptyAuthoritativeMappingDoesNotFallBackToMainData(t *testing.T) {
@@ -3350,4 +3234,235 @@ func TestGetAuthoritativeDomainToHashesMemoizesPerGeneration(t *testing.T) {
 		"a mapping write must invalidate the snapshot")
 	require.NotContains(t, third, "tracker.example.invalid",
 		"the fresh snapshot must reflect the removal")
+}
+
+// The details panel streams one torrent by hash on every sync tick. The cache
+// indexes rows by hash, so that request is a lookup, not a copy of the library
+// plus a filter pass. Not parallel: it reads process-wide allocation totals.
+func TestGetTorrentsWithFiltersSingleHashSkipsLibraryCopy(t *testing.T) {
+	const librarySize = 500
+
+	var maindata bytes.Buffer
+	maindata.WriteString(`{"rid":1,"full_update":true,"torrents":{`)
+	for i := range librarySize {
+		if i > 0 {
+			maindata.WriteByte(',')
+		}
+		fmt.Fprintf(&maindata, `"%040x": {"name":"Some.Release.Title.%d.S01E01.1080p.WEB-GRPA","infohash_v1":"%040x","state":"uploading","added_on":%d,"size":100,"progress":1,"category":"tv"}`, i+1, i+1, i+1, i)
+	}
+	// One hybrid torrent keyed by its v1 hash with a distinct v2 hash.
+	maindata.WriteString(`,"aa11": {"name":"Hybrid.Release.S02E03.2160p.WEB-GRPB","infohash_v1":"aa11","infohash_v2":"bb22bb22","state":"uploading","added_on":1,"size":100,"progress":1,"category":"tv"}`)
+	maindata.WriteString(`}}`)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/sync/maindata":
+			_, _ = w.Write(maindata.Bytes())
+		case "/api/v2/app/webapiVersion":
+			_, _ = w.Write([]byte("2.16.0"))
+		case "/api/v2/torrents/categories":
+			_, _ = w.Write([]byte(`{}`))
+		case "/api/v2/torrents/tags":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	pool := setupTestPool(t)
+	defer pool.Close()
+
+	ctx := WithSkipFreshData(t.Context())
+	inst, err := pool.instanceStore.Create(ctx, models.ClientTypeQbittorrent, "mock", srv.URL, "user", "pass", nil, nil, false, nil)
+	require.NoError(t, err)
+
+	qbtClient := qbt.NewClient(qbt.Config{Host: srv.URL, Timeout: 60})
+	client := &Client{
+		Client:      qbtClient,
+		instanceID:  inst.ID,
+		syncManager: qbtClient.NewSyncManager(qbt.DefaultSyncOptions()),
+	}
+	client.updateHealthStatus(true)
+	require.NoError(t, client.syncManager.Sync(ctx))
+
+	pool.mu.Lock()
+	pool.clients[inst.ID] = client
+	pool.mu.Unlock()
+
+	sm := NewSyncManager(pool, nil)
+
+	byHash := func(hash string) FilterOptions { return FilterOptions{Hashes: []string{hash}} }
+	byExpr := func(hash string) FilterOptions { return FilterOptions{Expr: fmt.Sprintf("Hash == %q", hash)} }
+	target := fmt.Sprintf("%040x", 7)
+
+	for _, tc := range []struct {
+		name    string
+		filters FilterOptions
+		want    string // expected name; "" means no row
+	}{
+		{"exact key", byHash(target), "Some.Release.Title.7.S01E01.1080p.WEB-GRPA"},
+		{"upper-case key", byHash(strings.ToUpper(target)), "Some.Release.Title.7.S01E01.1080p.WEB-GRPA"},
+		{"v2 variant of a hybrid torrent", byHash("BB22BB22"), "Hybrid.Release.S02E03.2160p.WEB-GRPB"},
+		{"removed torrent", byHash(fmt.Sprintf("%040x", 999999)), ""},
+		{"hash plus a status the row fails", FilterOptions{Hashes: []string{target}, Status: []string{"downloading"}}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := sm.GetTorrentsWithFilters(ctx, inst.ID, 1, 0, "added_on", "desc", "", tc.filters)
+			require.NoError(t, err)
+			if tc.want == "" {
+				require.Equal(t, 0, resp.Total, "a miss reports total 0 so the panel drops its stale row")
+				require.Empty(t, resp.Torrents)
+			} else {
+				require.Equal(t, 1, resp.Total)
+				require.Len(t, resp.Torrents, 1)
+				require.Equal(t, tc.want, resp.Torrents[0].Name)
+			}
+			require.NotNil(t, resp.Counts)
+			require.Equal(t, librarySize+1, resp.Counts.Status["all"], "sidebar counts still cover the whole library")
+		})
+	}
+
+	// Allocation proof: the hash request must not copy the library the way the
+	// expr request does. Counts are left out, the way a stream tick without
+	// IncludeCounts leaves them out, so the runs compare only the row selection.
+	ctx = WithSkipTrackerHydration(ctx)
+	measure := func(filters FilterOptions) uint64 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		for range 20 {
+			_, err := sm.GetTorrentsWithFilters(ctx, inst.ID, 1, 0, "added_on", "desc", "", filters)
+			require.NoError(t, err)
+		}
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	exprBytes := measure(byExpr(target))
+	hashBytes := measure(byHash(target))
+	t.Logf("20 requests: expr filter %d bytes, hash filter %d bytes", exprBytes, hashBytes)
+	require.Less(t, hashBytes*10, exprBytes, "a single-hash request must allocate far less than the library scan")
+}
+
+// Directory scan starts one ResumeWhenComplete poller per injected torrent.
+// The pollers must share the sync instead of each fetching maindata on its own
+// schedule.
+func TestResumeWhenCompletePollersShareSync(t *testing.T) {
+	t.Parallel()
+
+	const (
+		pollers  = 20
+		interval = 50 * time.Millisecond
+		timeout  = 500 * time.Millisecond
+	)
+
+	torrents := make([]string, 0, pollers)
+	hashes := make([]string, 0, pollers)
+	for i := range pollers {
+		hash := fmt.Sprintf("%040x", i+1)
+		hashes = append(hashes, hash)
+		torrents = append(torrents, fmt.Sprintf(`%q: {"name":"t%d", "state":"checkingUP", "amount_left": 0}`, hash, i))
+	}
+	maindata := `{"rid":1,"full_update":true,"torrents":{` + strings.Join(torrents, ",") + `}}`
+
+	var maindataCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/sync/maindata":
+			maindataCalls.Add(1)
+			_, _ = w.Write([]byte(maindata))
+		case "/api/v2/app/webapiVersion":
+			_, _ = w.Write([]byte("2.16.0"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	pool := setupTestPool(t)
+	defer pool.Close()
+
+	ctx := t.Context()
+	inst, err := pool.instanceStore.Create(ctx, models.ClientTypeQbittorrent, "mock", srv.URL, "user", "pass", nil, nil, false, nil)
+	require.NoError(t, err)
+
+	qbtClient := qbt.NewClient(qbt.Config{Host: srv.URL, Timeout: 60})
+	client := &Client{
+		Client:      qbtClient,
+		instanceID:  inst.ID,
+		syncManager: qbtClient.NewSyncManager(qbt.DefaultSyncOptions()),
+	}
+	client.updateHealthStatus(true)
+
+	pool.mu.Lock()
+	pool.clients[inst.ID] = client
+	pool.mu.Unlock()
+
+	sm := NewSyncManager(pool, nil)
+	// Directory scan injects torrents one by one, so the pollers tick out of step.
+	for _, hash := range hashes {
+		sm.ResumeWhenComplete(inst.ID, []string{hash}, ResumeWhenCompleteOptions{CheckInterval: interval, Timeout: timeout})
+		time.Sleep(interval / pollers)
+	}
+
+	time.Sleep(timeout + 100*time.Millisecond)
+
+	// About one fetch per interval; one per poller per interval would be ~200.
+	require.LessOrEqual(t, int(maindataCalls.Load()), 3*int(timeout/interval))
+	require.GreaterOrEqual(t, int(maindataCalls.Load()), 3)
+}
+
+func TestResumeWhenCompleteNeedsTwoSyncs(t *testing.T) {
+	t.Parallel()
+
+	const hash = "0000000000000000000000000000000000000001"
+	maindata := `{"rid":1,"full_update":true,"torrents":{"` + hash + `": {"name":"t", "state":"stoppedUP", "amount_left": 0}}}`
+
+	var maindataCalls atomic.Int32
+	var callsAtResume atomic.Int32
+	callsAtResume.Store(-1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/sync/maindata":
+			// A slow maindata makes the poller's next tick see a sync younger than the interval.
+			time.Sleep(30 * time.Millisecond)
+			maindataCalls.Add(1)
+			_, _ = w.Write([]byte(maindata))
+		case "/api/v2/torrents/start", "/api/v2/torrents/resume":
+			callsAtResume.CompareAndSwap(-1, maindataCalls.Load())
+		case "/api/v2/app/webapiVersion":
+			_, _ = w.Write([]byte("2.16.0"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	pool := setupTestPool(t)
+	defer pool.Close()
+
+	inst, err := pool.instanceStore.Create(t.Context(), models.ClientTypeQbittorrent, "mock", srv.URL, "user", "pass", nil, nil, false, nil)
+	require.NoError(t, err)
+
+	qbtClient := qbt.NewClient(qbt.Config{Host: srv.URL, Timeout: 60})
+	client := &Client{
+		Client:            qbtClient,
+		instanceID:        inst.ID,
+		syncManager:       qbtClient.NewSyncManager(qbt.DefaultSyncOptions()),
+		optimisticUpdates: ttlcache.New[string, *OptimisticTorrentUpdate](ttlcache.SetDefaultTTL(30 * time.Second)),
+	}
+	client.updateHealthStatus(true)
+
+	pool.mu.Lock()
+	pool.clients[inst.ID] = client
+	pool.mu.Unlock()
+
+	// A sync from before the call, like the cache before a directory scan recheck, must not count as a poll.
+	require.NoError(t, client.syncManager.Sync(t.Context()))
+	callsBefore := int(maindataCalls.Load())
+
+	sm := NewSyncManager(pool, nil)
+	sm.ResumeWhenComplete(inst.ID, []string{hash}, ResumeWhenCompleteOptions{CheckInterval: 100 * time.Millisecond, Timeout: 2 * time.Second})
+
+	require.Eventually(t, func() bool { return callsAtResume.Load() >= 0 }, 3*time.Second, 10*time.Millisecond)
+	require.GreaterOrEqual(t, int(callsAtResume.Load())-callsBefore, resumeWhenCompleteStablePolls, "each ready poll needs its own sync")
 }

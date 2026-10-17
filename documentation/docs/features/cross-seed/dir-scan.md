@@ -1,14 +1,15 @@
 ---
 sidebar_position: 4
-title: Directory Scanner
-description: Scan local directories and automatically cross-seed completed downloads.
+title: Cross-seed from a directory scan
+sidebar_label: Directory Scanner
+description: Scan local folders for content already on disk and cross-seed it to your trackers, without a torrent in qBittorrent.
 ---
 
 # Directory Scanner
 
 Directory Scanner (Dir Scan) scans local folders to find cross-seed opportunities for content already on disk. Library Scan queries the qBittorrent torrent list. Dir Scan works directly with files on the filesystem.
 
-Configure it in **Cross-Seed > Dir Scan**.
+Configure it in **Cross-Seed > Directories**.
 
 ## Requirements
 
@@ -116,7 +117,7 @@ For each configured scan directory, qui:
 :::note Categories + AutoTMM
 Dir Scan adds torrents with an explicit `savepath` to point qBittorrent at the existing files on disk. That forces **AutoTMM off** for Dir Scan injections.
 
-Dir Scan categories come only from **Dir Scan → Default Category** and per-directory **Category override**. Cross-Seed → Rules category modes (affix / indexer / custom) do not apply to Dir Scan.
+Dir Scan categories come only from **Dir Scan → Default Category** and per-directory **Category override**. Cross-Seed → Categories and tags category modes (affix / indexer / custom) do not apply to Dir Scan.
 
 If you later enable AutoTMM on an injected torrent, qBittorrent can relocate files based on its default save path and category rules.
 :::
@@ -134,6 +135,7 @@ Dir Scan maintains a FileID index (inode + device on Unix) to track files presen
 
 - Files that are already part of a seeding torrent
 - Torrents whose infohash already exists in qBittorrent
+- Torrents whose infohash is on the target instance's [cross-seed blocklist](./overview.md#blocklist)
 
 This prevents redundant searches and duplicate additions.
 
@@ -261,6 +263,14 @@ This is **not** an exact checkpoint resume. If you start a new run after a cance
 
 This behavior functions as a **restart with preserved progress** rather than continuing from the exact stoppage point.
 
+### Deleted files leave the file list
+
+When a file disappears from disk, its entry stays in the file list until three scans in a row have run without finding it. Dir Scan then drops the entry.
+
+Only full scans that finish count. A scan that fails partway, and a scan that cannot reach the directory at all, both leave every entry in place. A webhook or manual scan of a single subfolder does not count either, because it only looks at part of the directory and cannot tell you anything about the rest. Dir Scan also skips the cleanup when a scan finds far fewer of its tracked files than previous scans did, so an unmounted or half-mounted network share does not empty the list.
+
+Because the cleanup needs three completed full scans, a deleted file stays listed for roughly three scan intervals. At the default of one scan per day, that is about three days.
+
 ### New indexers reopen "no match" files
 
 Each "no match" file records which indexers were enabled when the search ran. If you enable an indexer missing from that record, the next scan searches the file again. You do not need to reset anything. An indexer present in the record does not trigger a retry, because qui already searched it.
@@ -277,6 +287,12 @@ Both buttons sit on the directory details card, next to the run history.
 - **Reset Scan Progress** deletes all tracked file state for the directory. The next scan reprocesses all files, including previous matches. Use this button only for a complete reset.
 
 Neither button starts a scan. Trigger a scan with **Scan Now**, or wait for the next scheduled run.
+
+### Search cache
+
+Dir Scan reuses cached indexer results from the [search cache](../search.md#search-cache). A cached result stays for the cache TTL, which is 24 hours at minimum. Dir Scan has no setting that bypasses the cache, so a scan after a reset can still get the same results.
+
+To clear the cached results of one indexer, open **Settings > Indexers**, edit the indexer, and save it. qui deletes the cached searches of an indexer when you save it.
 
 ### Scheduled vs manual scans
 
@@ -373,7 +389,7 @@ The UI shows the current phase and progress during active scans.
 
 ## Hardlink/Reflink Modes
 
-You configure each instance under **Cross-Seed > Rules > [Hardlink / Reflink Mode](./hardlink-mode.md#how-to-enable)**.
+You configure each instance under **Cross-Seed > After injection > [Hardlink / Reflink Mode](./hardlink-mode.md#how-to-enable)**.
 
 If the target qBittorrent instance has hardlink or reflink mode enabled, Dir Scan uses the same behavior as other cross-seed methods:
 

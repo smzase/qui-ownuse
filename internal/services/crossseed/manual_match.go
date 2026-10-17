@@ -14,6 +14,7 @@ import (
 	qbt "github.com/autobrr/go-qbittorrent"
 	"github.com/rs/zerolog/log"
 
+	"github.com/autobrr/qui/internal/fsops"
 	"github.com/autobrr/qui/internal/models"
 	"github.com/autobrr/qui/pkg/hardlinktree"
 )
@@ -87,10 +88,15 @@ type ManualMatchProposal struct {
 // ManualMatchProposalsResponse carries the ranked target proposals plus the
 // prefill values the Manual match dialog needs.
 type ManualMatchProposalsResponse struct {
-	SourceName      string   `json:"source_name"`
-	SourceSize      int64    `json:"source_size"`
-	SourceFileCount int      `json:"source_file_count"`
-	DefaultTags     []string `json:"default_tags"`
+	PackMode                  bool     `json:"pack_mode"`
+	PackEpisodeCount          int      `json:"pack_episode_count"`
+	AssemblyUnavailableReason string   `json:"assembly_unavailable_reason"`
+	ProposalLimit             int      `json:"proposal_limit"`
+	ProposalsTruncated        bool     `json:"proposals_truncated"`
+	SourceName                string   `json:"source_name"`
+	SourceSize                int64    `json:"source_size"`
+	SourceFileCount           int      `json:"source_file_count"`
+	DefaultTags               []string `json:"default_tags"`
 	// PinnedCategory is set when the automation settings pin every cross-seed to
 	// one category. The apply then ignores the request category, so the dialog
 	// shows this value instead of offering a pick it would discard.
@@ -137,6 +143,18 @@ func (s *Service) ManualMatchProposals(ctx context.Context, instanceID int, torr
 	}
 
 	sourceRelease := s.releaseCache.Parse(meta.Name)
+	packMode := isTVSeasonPack(sourceRelease)
+	packEpisodeCount := 0
+	proposalLimit := manualMatchProposalLimit
+	assemblyUnavailable := ""
+	if packMode {
+		packEpisodeCount = len(s.matcher().extractPackEpisodes(meta.Files, sourceRelease))
+		proposalLimit = min(manualMatchCoarseLimit, packEpisodeCount+manualMatchProposalLimit)
+		assemblyUnavailable = manualAssemblyUnavailableReason(instance)
+		if packEpisodeCount == 0 {
+			assemblyUnavailable = "no_episode_files"
+		}
+	}
 	sourceTitle := ""
 	if sourceRelease != nil {
 		sourceTitle = s.stringNormalizer.Normalize(sourceRelease.Title)
@@ -224,7 +242,7 @@ func (s *Service) ManualMatchProposals(ctx context.Context, instanceID int, torr
 	}
 
 	linkMode := instance != nil && (instance.UseReflinks || instance.UseHardlinks)
-	proposals := make([]ManualMatchProposal, 0, manualMatchProposalLimit+1)
+	proposals := make([]ManualMatchProposal, 0, proposalLimit+1)
 	for _, torrent := range shortlist {
 		hashKey := normalizeHash(torrent.Hash)
 		candidateFiles := filesByHash[hashKey]
@@ -242,7 +260,7 @@ func (s *Service) ManualMatchProposals(ctx context.Context, instanceID int, torr
 		// read-only save path shows what the add will actually do.
 		// ponytail: plain parsed releases approximate the apply's release view.
 		if linkMode && overlap > 0 &&
-			s.getMatchTypeWithReason(s.releaseCache.Parse(torrent.Name), sourceRelease, candidateFiles, meta.Files, defaultSizeMismatchTolerancePercent).MatchType != "" {
+			s.matcher().getMatchTypeWithReason(s.releaseCache.Parse(torrent.Name), sourceRelease, candidateFiles, meta.Files, defaultSizeMismatchTolerancePercent).MatchType != "" {
 			effectiveSavePath = effectiveFor(torrent)
 		}
 		proposals = append(proposals, ManualMatchProposal{
@@ -258,12 +276,13 @@ func (s *Service) ManualMatchProposals(ctx context.Context, instanceID int, torr
 	slices.SortFunc(proposals, func(a, b ManualMatchProposal) int {
 		return cmp.Or(cmp.Compare(b.OverlapBytes, a.OverlapBytes), strings.Compare(a.Name, b.Name))
 	})
+	proposalsTruncated := len(proposals) > proposalLimit || (packMode && packEpisodeCount > manualMatchCoarseLimit)
 	if requestedIdx := slices.IndexFunc(proposals, func(p ManualMatchProposal) bool {
 		return wantHash != "" && normalizeHash(p.Hash) == wantHash
-	}); requestedIdx >= manualMatchProposalLimit {
-		proposals = append(proposals[:manualMatchProposalLimit], proposals[requestedIdx])
-	} else if len(proposals) > manualMatchProposalLimit {
-		proposals = proposals[:manualMatchProposalLimit]
+	}); requestedIdx >= proposalLimit {
+		proposals = append(proposals[:proposalLimit], proposals[requestedIdx])
+	} else if len(proposals) > proposalLimit {
+		proposals = proposals[:proposalLimit]
 	}
 
 	// Default tag parity with the search-results dialog, which applies
@@ -284,12 +303,17 @@ func (s *Service) ManualMatchProposals(ctx context.Context, instanceID int, torr
 	}
 
 	return &ManualMatchProposalsResponse{
-		SourceName:      meta.Name,
-		SourceSize:      sourceTotal,
-		SourceFileCount: len(meta.Files),
-		DefaultTags:     defaultTags,
-		PinnedCategory:  pinnedCategory,
-		Proposals:       proposals,
+		PackMode:                  packMode,
+		PackEpisodeCount:          packEpisodeCount,
+		AssemblyUnavailableReason: assemblyUnavailable,
+		ProposalLimit:             proposalLimit,
+		ProposalsTruncated:        proposalsTruncated,
+		SourceName:                meta.Name,
+		SourceSize:                sourceTotal,
+		SourceFileCount:           len(meta.Files),
+		DefaultTags:               defaultTags,
+		PinnedCategory:            pinnedCategory,
+		Proposals:                 proposals,
 	}, nil
 }
 
@@ -323,7 +347,7 @@ func (s *Service) manualMatchEffectiveSavePath(
 	if instance == nil || (!instance.UseReflinks && !instance.UseHardlinks) {
 		return targetSavePath
 	}
-	baseDir := s.previewLinkBaseDir(ctx, instance, targetSavePath)
+	baseDir, d := s.previewLinkBaseDir(ctx, instance, targetSavePath)
 	if baseDir == "" {
 		return targetSavePath
 	}
@@ -332,29 +356,31 @@ func (s *Service) manualMatchEffectiveSavePath(
 		treeFiles = append(treeFiles, hardlinktree.TorrentFile{Path: f.Name, Size: f.Size})
 	}
 	candidate := CrossSeedCandidate{InstanceID: instance.ID, InstanceName: instance.Name}
-	return normalizePath(s.buildHardlinkDestDir(ctx, instance, baseDir, torrentHash, torrentName, candidate, trackerDomain, &CrossSeedRequest{}, treeFiles))
+	return s.buildHardlinkDestDir(ctx, d, instance, baseDir, torrentHash, torrentName, candidate, trackerDomain, &CrossSeedRequest{}, treeFiles)
 }
 
 // previewLinkBaseDir picks the configured link base directory on the same
-// filesystem as samplePath, without the MkdirAll side effect of
-// FindMatchingBaseDir. Falls back to the first configured directory.
-func (s *Service) previewLinkBaseDir(ctx context.Context, instance *models.Instance, samplePath string) string {
-	first := ""
-	backend, backendErr := s.getBackendForInstance(ctx, instance.ID)
-	for dir := range strings.SplitSeq(instance.HardlinkBaseDir, ",") {
-		dir = strings.TrimSpace(dir)
-		if dir == "" {
-			continue
-		}
-		if first == "" {
-			first = dir
-		}
-		if backendErr != nil || backend == nil || samplePath == "" {
-			continue
-		}
-		if same, err := backend.SameFilesystem(ctx, samplePath, dir); err == nil && same {
-			return dir
+// filesystem as samplePath, in LinkIntoMatchingBaseDir order but without its
+// MkdirAll side effect. Falls back to the best-ranked directory. The dialect
+// is the backend's, or the host's when the backend cannot be read.
+func (s *Service) previewLinkBaseDir(ctx context.Context, instance *models.Instance, samplePath string) (string, fsops.PathDialect) {
+	dirs := splitBaseDirs(instance.HardlinkBaseDir)
+	if len(dirs) == 0 {
+		return "", fsops.HostPaths
+	}
+	d := fsops.HostPaths
+	backend, backendErr := s.getBackendForInstance(ctx, instance.ID, models.CapabilityWrite)
+	haveBackend := backendErr == nil && backend != nil
+	if haveBackend {
+		d = backend.Paths()
+	}
+	dirs = rankBaseDirs(d, dirs, samplePath)
+	if haveBackend && samplePath != "" {
+		for _, dir := range dirs {
+			if same, err := backend.SameFilesystem(ctx, samplePath, dir); err == nil && same {
+				return dir, d
+			}
 		}
 	}
-	return first
+	return dirs[0], d
 }

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { api } from "@/lib/api"
-import { formatErrorMessage } from "@/lib/utils"
+import { formatErrorMessage } from "@/lib/format-error-message"
 import type { TransmissionPreferences } from "@/types"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Gauge, Globe, HardDrive, RefreshCw, Users } from "lucide-react"
@@ -510,7 +510,7 @@ export function TransmissionPreferencesForm({ instanceId, section = "torrents", 
                   checked={draft["pex-enabled"] ?? false}
                   onCheckedChange={checked => setField("pex-enabled", checked)}
                 />
-                <Label htmlFor={fieldId("pex")} className="text-sm font-medium">PEX</Label>
+                <Label htmlFor={fieldId("pex")} className="text-sm font-medium">{t("preferences.transmission.network.pex")}</Label>
               </div>
               <div className="flex items-center gap-3">
                 <Switch
@@ -518,7 +518,7 @@ export function TransmissionPreferencesForm({ instanceId, section = "torrents", 
                   checked={draft["dht-enabled"] ?? false}
                   onCheckedChange={checked => setField("dht-enabled", checked)}
                 />
-                <Label htmlFor={fieldId("dht")} className="text-sm font-medium">DHT</Label>
+                <Label htmlFor={fieldId("dht")} className="text-sm font-medium">{t("preferences.transmission.network.dht")}</Label>
               </div>
               <div className="flex items-center gap-3">
                 <Switch
@@ -526,7 +526,7 @@ export function TransmissionPreferencesForm({ instanceId, section = "torrents", 
                   checked={draft["lpd-enabled"] ?? false}
                   onCheckedChange={checked => setField("lpd-enabled", checked)}
                 />
-                <Label htmlFor={fieldId("lpd")} className="text-sm font-medium">LPD</Label>
+                <Label htmlFor={fieldId("lpd")} className="text-sm font-medium">{t("preferences.transmission.network.lpd")}</Label>
               </div>
             </div>
           </div>

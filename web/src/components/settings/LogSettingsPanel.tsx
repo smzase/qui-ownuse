@@ -32,6 +32,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { useDateTimeFormatters } from "@/hooks/useDateTimeFormatters"
 import { usePersistedLogExclusions } from "@/hooks/usePersistedLogExclusions"
+import { ALL_LEVELS_SET, ALL_LOG_LEVELS, usePersistedLogLevels, type LogLevel } from "@/hooks/usePersistedLogLevels"
 import { api } from "@/lib/api"
 import { copyTextToClipboard, formatBytes } from "@/lib/utils"
 import type { LogSettingsUpdate } from "@/types"
@@ -250,8 +251,6 @@ function LogSettingsForm() {
   return <LogSettingsFormInner settings={settings} />
 }
 
-type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
-
 interface RawLogLine {
   id: number
   text: string
@@ -283,11 +282,9 @@ const LEVEL_BADGE_COLORS: Record<LogLevel, string> = {
   error: "bg-red-500/20 text-red-400",
 }
 
-const VALID_LEVELS = new Set<LogLevel>(["trace", "debug", "info", "warn", "error"])
-
 function normalizeLevel(raw: string | undefined): LogLevel {
   const level = raw?.toLowerCase()
-  if (level && VALID_LEVELS.has(level as LogLevel)) {
+  if (level && ALL_LEVELS_SET.has(level as LogLevel)) {
     return level as LogLevel
   }
   // Coerce fatal/panic to error
@@ -314,27 +311,14 @@ function parseLogLine(entry: RawLogLine): ParsedLogEntry {
   }
 }
 
-function formatTime(isoTime: string): string {
-  if (!isoTime) return ""
-  try {
-    const date = new Date(isoTime)
-    return date.toLocaleTimeString("en-US", {
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
-  } catch {
-    return ""
-  }
-}
-
 function LogEntry({
   entry,
+  formatTimeOnly,
   onSelect,
   onMute,
 }: {
   entry: ParsedLogEntry
+  formatTimeOnly: (timestamp: number, includeSeconds?: boolean) => string
   onSelect?: () => void
   onMute?: () => void
 }) {
@@ -362,7 +346,7 @@ function LogEntry({
       role={isClickable ? "button" : undefined}
       tabIndex={isClickable ? 0 : undefined}
     >
-      <span className="shrink-0 text-muted-foreground/60">{formatTime(entry.time)}</span>
+      <span className="shrink-0 text-muted-foreground/60">{entry.time ? formatTimeOnly(Date.parse(entry.time) / 1000, true) : ""}</span>
       <button
         type="button"
         onClick={onMute ? handleMute : undefined}
@@ -459,6 +443,7 @@ function LogEntryDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { t } = useTranslation("settings")
+  const { formatISOTimestamp } = useDateTimeFormatters()
   // Memoize JSON stringification and highlighting to avoid re-tokenizing on unrelated renders
   const { prettyJson, highlightedJson } = useMemo(() => {
     if (!entry) return { prettyJson: "", highlightedJson: [] as React.ReactNode[] }
@@ -505,7 +490,7 @@ function LogEntryDialog({
             )}
           </DialogTitle>
           <DialogDescription>
-            {entry?.time ? new Date(entry.time).toLocaleString() : t("logs.entryDialog.rawLine")}
+            {entry?.time ? formatISOTimestamp(entry.time) : t("logs.entryDialog.rawLine")}
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[400px] overflow-auto rounded-md border bg-muted/30 p-4">
@@ -529,19 +514,18 @@ function LogEntryDialog({
   )
 }
 
-const ALL_LOG_LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error"]
-
 // Buffer limits: soft cap when following live, hard cap always
 const LOG_SOFT_CAP = 1000
 const LOG_HARD_CAP = 10000
 
 function LiveLogViewer({ configPath }: { configPath?: string }) {
   const { t } = useTranslation("settings")
+  const { formatTimeOnly } = useDateTimeFormatters()
   const [lines, setLines] = useState<RawLogLine[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selectedLevels, setSelectedLevels] = useState<Set<LogLevel>>(new Set(ALL_LOG_LEVELS))
+  const [selectedLevels, setSelectedLevels] = usePersistedLogLevels()
   const [searchQuery, setSearchQuery] = useState("")
   const [droppedWhilePaused, setDroppedWhilePaused] = useState(false)
   const [selectedEntry, setSelectedEntry] = useState<ParsedLogEntry | null>(null)
@@ -837,6 +821,7 @@ function LiveLogViewer({ configPath }: { configPath?: string }) {
               <LogEntry
                 key={entry.id}
                 entry={entry}
+                formatTimeOnly={formatTimeOnly}
                 onSelect={() => setSelectedEntry(entry)}
                 onMute={() => handleMuteMessage(entry.message)}
               />

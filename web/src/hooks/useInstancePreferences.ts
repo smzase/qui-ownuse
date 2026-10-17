@@ -65,7 +65,6 @@ export function useInstancePreferences(
     staleTime: cachedPreferences ? Infinity : 60000,
     gcTime: 1800000,
     refetchInterval: false,
-    placeholderData: previousData => previousData,
     initialData: () => cachedPreferences,
   })
 
@@ -136,14 +135,11 @@ export function useInstancePreferences(
     },
   })
 
-  type UpdatePreferencesOptions = Parameters<typeof updateMutation.mutate>[1]
-
   return {
     preferences: resolvedPreferences,
     isLoading: fetchIfMissing && externalEnabled ? (isLoading && !resolvedPreferences) : false,
     error,
-    updatePreferences: (updatedPreferences: Partial<AppPreferences>, options?: UpdatePreferencesOptions) =>
-      updateMutation.mutate(updatedPreferences, options),
+    updatePreferences: updateMutation.mutateAsync,
     isUpdating: updateMutation.isPending,
   }
 }

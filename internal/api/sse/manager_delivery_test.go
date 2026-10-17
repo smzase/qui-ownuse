@@ -147,6 +147,53 @@ func (f *fakeSyncProvider) gateTorrentBuilds() (release func()) {
 	}
 }
 
+// TestInitBuildUsesBaselinePublishedWhileMaterializing pins the initialization
+// race: if a tick advances the group while an init candidate is being built, the
+// joiner must receive the tick's exact retained snapshot and version rather than
+// the stale candidate it materialized independently.
+func TestInitBuildUsesBaselinePublishedWhileMaterializing(t *testing.T) {
+	before := singleResp(qbittorrent.TorrentView{Torrent: &qbt.Torrent{
+		Hash:     "a",
+		Progress: 0.99,
+		State:    qbt.TorrentStateDownloading,
+	}})
+	provider := &fakeSyncProvider{torrentsResponse: before}
+	manager := NewStreamManager(nil, provider, nil)
+	t.Cleanup(func() { _ = manager.Shutdown(context.Background()) })
+
+	opts := StreamOptions{InstanceID: 1, Limit: 300}
+	group := &subscriptionGroup{
+		key:     streamOptionsKey(opts),
+		options: opts,
+		version: StreamVersion{Major: 11},
+	}
+	release := provider.gateTorrentBuilds()
+	result := make(chan *StreamPayload, 1)
+	go func() {
+		result <- manager.buildGroupInitPayload(group, opts, &StreamMeta{InstanceID: 1})
+	}()
+
+	require.Eventually(t, func() bool {
+		return provider.torrentsCallCount() == 1
+	}, time.Second, time.Millisecond)
+
+	completed := singleResp(qbittorrent.TorrentView{Torrent: &qbt.Torrent{
+		Hash:     "a",
+		Progress: 1,
+		State:    qbt.TorrentStateUploading,
+	}})
+	published := group.buildUpdatePayload(opts, completed, &StreamMeta{InstanceID: 1})
+	require.Equal(t, &StreamVersion{Major: 11, Minor: 1}, published.Version)
+	release()
+
+	init := <-result
+	require.NotNil(t, init)
+	require.Equal(t, streamEventInit, init.Type)
+	require.Equal(t, published.Version, init.Version)
+	require.InDelta(t, 1, init.Data.Torrents[0].Progress, 0)
+	require.Equal(t, qbt.TorrentStateUploading, init.Data.Torrents[0].State)
+}
+
 // cloneTorrentResponse returns a shallow copy so the build path cannot mutate the
 // canned response shared across calls (buildGroupPayload sets InstanceMeta).
 func cloneTorrentResponse(resp *qbittorrent.TorrentResponse) *qbittorrent.TorrentResponse {
@@ -496,8 +543,7 @@ func seedActiveInstance(t *testing.T, manager *StreamManager) int {
 // TestServeEndToEndDeliversInitAndUpdate covers the happy path: an init snapshot
 // on connect, followed by an update event when HandleMainData fires.
 func TestServeEndToEndDeliversInitAndUpdate(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	canned := cannedResponse()
 	provider := &fakeSyncProvider{torrentsResponse: canned}
@@ -536,8 +582,7 @@ func TestServeEndToEndDeliversInitAndUpdate(t *testing.T) {
 }
 
 func TestServeEndToEndDeliversTrackerHealthUpdate(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	canned := cannedResponse()
 	provider := &fakeSyncProvider{torrentsResponse: canned}
@@ -574,8 +619,7 @@ func TestServeEndToEndDeliversTrackerHealthUpdate(t *testing.T) {
 // calls collapses into far fewer torrent builds than events while still
 // delivering at least one update to the connected subscriber.
 func TestServeCoalescesBurstOfUpdates(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	provider := &fakeSyncProvider{torrentsResponse: cannedResponse()}
 	manager := NewStreamManager(nil, provider, store)
@@ -705,8 +749,7 @@ func TestParseStreamRequestsRejectsTooManyEntries(t *testing.T) {
 // spurious init to the first (init is per-connection, not a group fan-out), while
 // a subsequent update still fans out to both.
 func TestServeDeliversExactlyOneInitPerConnection(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	provider := &fakeSyncProvider{torrentsResponse: cannedResponse()}
 	manager := NewStreamManager(nil, provider, store)
@@ -802,8 +845,7 @@ func TestServeDeliversStreamErrorOnBuildFailure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store, cleanup := newTestInstanceStore(t)
-			defer cleanup()
+			store := newTestInstanceStore(t)
 
 			provider := &fakeSyncProvider{
 				torrentsResponse:      cannedResponse(),
@@ -848,8 +890,7 @@ func TestServeDeliversStreamErrorOnBuildFailure(t *testing.T) {
 // covered separately in manager_test.go; this exercises the second, group-refresh
 // callsite.
 func TestServeStampsLastSuccessfulSyncOnSingleMemberBuildFailure(t *testing.T) {
-	store, cleanup := newTestInstanceStore(t)
-	defer cleanup()
+	store := newTestInstanceStore(t)
 
 	provider := &fakeSyncProvider{
 		torrentsResponse:      cannedResponse(),

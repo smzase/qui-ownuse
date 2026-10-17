@@ -9,13 +9,14 @@ import (
 	"encoding/base64"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 
 	qbt "github.com/autobrr/go-qbittorrent"
-	"github.com/moistari/rls"
+	"github.com/autobrr/rls"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/require"
@@ -112,7 +113,12 @@ func seasonPackFixturePathOnBaseVolume(sourcePath, configuredDirs string) string
 		return sourcePath
 	}
 
-	volume := filepath.VolumeName(strings.TrimSpace(strings.Split(configuredDirs, ",")[0]))
+	configuredDir := strings.TrimSpace(strings.Split(configuredDirs, ",")[0])
+	// Slash-rooted paths can belong to a remote backend, including //data/hl.
+	if strings.HasPrefix(configuredDir, "/") {
+		return sourcePath
+	}
+	volume := filepath.VolumeName(configuredDir)
 	if volume == "" {
 		return sourcePath
 	}
@@ -656,7 +662,7 @@ func TestFixC_MatchStoresStampedReleaseWithoutMutatingCache(t *testing.T) {
 	svc := &Service{releaseCache: NewReleaseCache()}
 	settings := &models.CrossSeedAutomationSettings{SeasonPackEnabled: true}
 
-	got := svc.matchEpisodeCandidatesDetailed(cached, packRelease, packEpisodes, settings, nil)
+	got := svc.matchEpisodeCandidatesDetailed(cached, "", packRelease, packEpisodes, settings, nil)
 	require.Len(t, got, 1)
 	matches, ok := got[episodeIdentity{series: 3, episode: 25}]
 	require.True(t, ok, "identity must be the stamped one")
@@ -687,7 +693,7 @@ func TestLightCheck_CountsAbsoluteNumberedLocalsForKnownSeasonPack(t *testing.T)
 	svc := &Service{releaseCache: NewReleaseCache()}
 	settings := &models.CrossSeedAutomationSettings{SeasonPackEnabled: true}
 
-	got := svc.matchEpisodeCandidatesDetailed(cached, packRelease, nil, settings, nil)
+	got := svc.matchEpisodeCandidatesDetailed(cached, "", packRelease, nil, settings, nil)
 	require.Len(t, got, 2, "light check must count both seasoned and absolute-numbered locals")
 	_, ok := got[episodeIdentity{series: 3, episode: 1}]
 	require.True(t, ok, "seasoned local must count")
@@ -713,7 +719,7 @@ func TestMatchEpisodeCandidates_ExcludesIncompleteEpisodes(t *testing.T) {
 	svc := &Service{releaseCache: NewReleaseCache()}
 	settings := &models.CrossSeedAutomationSettings{SeasonPackEnabled: true}
 
-	got := svc.matchEpisodeCandidatesDetailed(cached, packRelease, nil, settings, nil)
+	got := svc.matchEpisodeCandidatesDetailed(cached, "", packRelease, nil, settings, nil)
 	require.Len(t, got, 1, "incomplete episode must not count as a candidate")
 	_, ok := got[episodeIdentity{series: 3, episode: 1}]
 	require.True(t, ok, "complete episode must count")
@@ -723,6 +729,15 @@ func TestMatchEpisodeCandidates_ExcludesIncompleteEpisodes(t *testing.T) {
 // candidates. The loop reads every cached episode, so a reason that means "belongs to
 // another show or another pack" must stay off the default level.
 func TestMatchEpisodeCandidates_FilterLogLevels(t *testing.T) {
+	// Run in a separate process so search goroutines cannot race with this test's logger.
+	if os.Getenv("QUI_TEST_FILTER_LOG_LEVELS_CHILD") != "1" {
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestMatchEpisodeCandidates_FilterLogLevels$", "-test.timeout=30s")
+		cmd.Env = append(os.Environ(), "QUI_TEST_FILTER_LOG_LEVELS_CHILD=1")
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return
+	}
+
 	parsedPack := rls.ParseString("Cool.Show.S03.1080p.WEB.x264-GRP")
 	packRelease := &parsedPack
 
@@ -792,7 +807,7 @@ func TestMatchEpisodeCandidates_FilterLogLevels(t *testing.T) {
 			svc := &Service{releaseCache: NewReleaseCache()}
 			settings := &models.CrossSeedAutomationSettings{SeasonPackEnabled: true}
 
-			got := svc.matchEpisodeCandidatesDetailed(cached, packRelease, tt.packEpisodes, settings, nil)
+			got := svc.matchEpisodeCandidatesDetailed(cached, "", packRelease, tt.packEpisodes, settings, nil)
 			require.Len(t, got, 1, "only the fully matching episode may count")
 
 			for _, w := range tt.want {
@@ -2914,7 +2929,7 @@ func TestMatchEpisodeCandidates_MultiEpisodeLocalStaysAnEpisodeSource(t *testing
 	svc := &Service{releaseCache: NewReleaseCache()}
 	settings := &models.CrossSeedAutomationSettings{SeasonPackEnabled: true}
 
-	got := svc.matchEpisodeCandidatesDetailed(cached, packRelease, packEpisodes, settings, nil)
+	got := svc.matchEpisodeCandidatesDetailed(cached, "", packRelease, packEpisodes, settings, nil)
 	require.Len(t, got, 1)
 	matches, ok := got[episodeIdentity{series: 3, episode: 25}]
 	require.True(t, ok, "range local must be identified by its first episode")

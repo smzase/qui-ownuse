@@ -6,17 +6,22 @@
 import { IndexersPage } from "@/components/indexers/IndexersPage"
 import { InstanceCard } from "@/components/instances/InstanceCard"
 import { InstanceForm } from "@/components/instances/InstanceForm"
+import { MigrationHint } from "@/components/instances/MigrationHint"
 import { PasswordIssuesBanner } from "@/components/instances/PasswordIssuesBanner"
 import { ShareInstancesDialog } from "@/components/instances/ShareInstancesDialog"
 import { InstancePreferencesDialog } from "@/components/instances/preferences/InstancePreferencesDialog"
 import { ArrInstancesManager } from "@/components/settings/ArrInstancesManager"
 import { ClientApiKeysManager } from "@/components/settings/ClientApiKeysManager"
 import { DateTimePreferencesForm } from "@/components/settings/DateTimePreferencesForm"
+import { GazelleSettingsCard } from "@/components/settings/GazelleSettingsCard"
 import { supportedLanguages, languageNames, changeLanguage, type AppLanguage } from "@/i18n"
 import { ExternalProgramsManager } from "@/components/settings/ExternalProgramsManager"
 import { UsersManager } from "@/components/settings/UsersManager"
 import { LogSettingsPanel } from "@/components/settings/LogSettingsPanel"
 import { NotificationsManager } from "@/components/settings/NotificationsManager"
+import { InstallUpdateButton } from "@/components/settings/InstallUpdateButton"
+import { RestartButton } from "@/components/settings/RestartButton"
+import { RestartOverlay } from "@/components/settings/RestartOverlay"
 import { ThemeSelector } from "@/components/themes/ThemeSelector"
 import {
   AlertDialog,
@@ -54,6 +59,7 @@ import { Switch } from "@/components/ui/switch"
 import { useDateTimeFormatters } from "@/hooks/useDateTimeFormatters"
 import { useAuth } from "@/hooks/useAuth"
 import { useInstances } from "@/hooks/useInstances"
+import { useSelfUpdate } from "@/hooks/useSelfUpdate"
 import { usePersistedTitleBarSpeeds } from "@/hooks/usePersistedTitleBarSpeeds"
 import { APIError, api } from "@/lib/api"
 
@@ -112,13 +118,16 @@ function getApiErrorMessage(error: unknown, fallback: string) {
 
 function ChangePasswordForm() {
   const { t } = useTranslation("settings")
+  const { setIsAuthenticated } = useAuth()
   const mutation = useMutation({
     mutationFn: async (data: { currentPassword: string; newPassword: string }) => {
       return api.changePassword(data.currentPassword, data.newPassword)
     },
     onSuccess: () => {
       toast.success(t("changePassword.toasts.success"))
-      form.reset()
+      // The server ended every session, this one included. Dropping the
+      // cached user sends the authenticated layout back to the login page.
+      setIsAuthenticated(false)
     },
     onError: () => {
       toast.error(t("changePassword.toasts.error"))
@@ -645,6 +654,7 @@ function InstancesManager({ search, onSearchChange }: InstancesManagerProps) {
             <DialogDescription>
               {t("instances.addDialog.description")}
             </DialogDescription>
+            <MigrationHint />
           </DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0">
             <InstanceForm
@@ -833,27 +843,6 @@ function TorznabSearchCachePanel() {
   )
 }
 
-function formatApplicationDate(value?: string): string {
-  if (!value || value.trim() === "") {
-    return "—"
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short",
-  })
-}
-
 function formatRelativeDate(value: string | undefined, t: (key: string, options?: Record<string, string>) => string): string {
   if (!value || value.trim() === "") {
     return "—"
@@ -909,6 +898,7 @@ type ApplicationField = {
   secondary?: string
   copyValue?: string
   monospace?: boolean
+  action?: ReactNode
 }
 
 interface ApplicationSectionProps {
@@ -949,6 +939,7 @@ function ApplicationSection({ title, description, fields, onCopy, headerAction }
                         <p className="mt-1 text-xs text-muted-foreground">{field.secondary}</p>
                       )}
                     </div>
+                    {field.action}
                     {field.copyValue && (
                       <Button
                         variant="ghost"
@@ -1068,8 +1059,9 @@ function ManualUpdatePanel() {
   )
 }
 
-function ApplicationInfoPanel() {
+function ApplicationInfoPanel({ openUpdate, onUpdateOpened }: { openUpdate: boolean; onUpdateOpened: () => void }) {
   const { t } = useTranslation("settings")
+  const { formatISOTimestamp, formatTimestamp } = useDateTimeFormatters()
   const { user } = useAuth()
   const canManageUpdates = user?.role === "admin" || user?.permissions?.includes("manage_updates") === true
   const appInfoQuery = useQuery({
@@ -1089,6 +1081,16 @@ function ApplicationInfoPanel() {
     queryFn: () => api.getLatestVersion(),
     staleTime: 5 * 60 * 1000,
   })
+
+  const selfUpdate = useSelfUpdate()
+  const { setConfirmOpen } = selfUpdate
+
+  useEffect(() => {
+    if (canManageUpdates && openUpdate && latestVersionQuery.data) {
+      setConfirmOpen(true)
+      onUpdateOpened()
+    }
+  }, [canManageUpdates, openUpdate, latestVersionQuery.data, setConfirmOpen, onUpdateOpened])
 
   const info = appInfoQuery.data
   const authUser = currentUserQuery.data
@@ -1140,20 +1142,25 @@ function ApplicationInfoPanel() {
     return { label: t("application.build.statuses.upToDate"), detail: t("application.build.statuses.upToDateDetail") }
   }, [t, info, latestVersionQuery.data, latestVersionQuery.isFetching, latestVersionQuery.isLoading])
 
-  const updateCheckedAt = latestVersionQuery.dataUpdatedAt > 0 ? formatApplicationDate(new Date(latestVersionQuery.dataUpdatedAt).toISOString()) : t("application.build.statuses.notCheckedYet")
+  const updateCheckedAt = latestVersionQuery.dataUpdatedAt > 0 ? formatTimestamp(latestVersionQuery.dataUpdatedAt / 1000) : t("application.build.statuses.notCheckedYet")
+
+  const updateControl = canManageUpdates && latestVersionQuery.data && (
+    <InstallUpdateButton selfUpdate={selfUpdate} release={latestVersionQuery.data} className="shrink-0" />
+  )
 
   const buildFields: ApplicationField[] = info ? [
     { label: t("application.build.version"), value: info.version || "—", monospace: true },
     { label: t("application.build.commit"), value: info.commitShort || info.commit || "—", copyValue: info.commit || "", monospace: true },
     {
       label: t("application.build.buildDate"),
-      value: formatApplicationDate(info.buildDate),
+      value: info.buildDate?.trim() ? formatISOTimestamp(info.buildDate) : "—",
       secondary: formatRelativeDate(info.buildDate, t),
     },
     {
       label: t("application.build.updateStatus"),
       value: updateStatus.label,
       secondary: [updateStatus.detail, t("application.build.statuses.lastChecked", { date: updateCheckedAt })].filter(Boolean).join(" • "),
+      action: updateControl,
     },
   ] : []
 
@@ -1216,6 +1223,8 @@ function ApplicationInfoPanel() {
         </Card>
       )}
 
+      {appInfoQuery.isError && !info && updateControl}
+
       {info && (
         <>
           <ApplicationSection
@@ -1224,19 +1233,22 @@ function ApplicationInfoPanel() {
             fields={buildFields}
             onCopy={handleCopy}
             headerAction={(
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void appInfoQuery.refetch()
-                  void latestVersionQuery.refetch()
-                  void currentUserQuery.refetch()
-                }}
-                disabled={appInfoQuery.isFetching || latestVersionQuery.isFetching || currentUserQuery.isFetching}
-              >
-                <RefreshCw className={`mr-2 h-4 w-4 ${(appInfoQuery.isFetching || latestVersionQuery.isFetching || currentUserQuery.isFetching) ? "animate-spin" : ""}`} />
-                {t("application.build.refresh")}
-              </Button>
+              <div className="flex gap-2">
+                {canManageUpdates && <RestartButton />}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void appInfoQuery.refetch()
+                    void latestVersionQuery.refetch()
+                    void currentUserQuery.refetch()
+                  }}
+                  disabled={appInfoQuery.isFetching || latestVersionQuery.isFetching || currentUserQuery.isFetching}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${(appInfoQuery.isFetching || latestVersionQuery.isFetching || currentUserQuery.isFetching) ? "animate-spin" : ""}`} />
+                  {t("application.build.refresh")}
+                </Button>
+              </div>
             )}
           />
           {info.goOS === "linux" && canManageUpdates && <ManualUpdatePanel />}
@@ -1260,7 +1272,7 @@ function ApplicationInfoPanel() {
           />
         </>
       )}
-
+      <RestartOverlay state={selfUpdate.overlay} update={selfUpdate.update} />
     </div>
   )
 }
@@ -1644,7 +1656,7 @@ export function Settings({ search, onSearchChange }: SettingsProps) {
         <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
           {activeTab === "application" && (
             <SettingsScrollPanel contentClassName={scrollPanelContentClassName}>
-              <ApplicationInfoPanel />
+              <ApplicationInfoPanel openUpdate={search.modal === "install-update"} onUpdateOpened={() => onSearchChange({ ...search, modal: undefined })} />
             </SettingsScrollPanel>
           )}
 
@@ -1673,6 +1685,7 @@ export function Settings({ search, onSearchChange }: SettingsProps) {
           {activeTab === "indexers" && (
             <SettingsScrollPanel contentClassName={scrollPanelContentClassName}>
               <IndexersPage withContainer={false} />
+              <GazelleSettingsCard />
             </SettingsScrollPanel>
           )}
 

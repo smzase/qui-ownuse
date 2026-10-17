@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { api } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/dateTimeUtils"
-import { formatBytes } from "@/lib/utils"
+import { copyTextToClipboard, formatBytes } from "@/lib/utils"
 import type {
   CrossSeedApplyResponse,
   CrossSeedSearchDecisionTrace,
@@ -42,6 +42,7 @@ import type {
 } from "@/types"
 import { AlertTriangle, ChevronDown, ChevronRight, Copy, ExternalLink, Loader2, RefreshCw, SlidersHorizontal } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
+import { useDateTimeFormatters } from "@/hooks/useDateTimeFormatters"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
@@ -149,6 +150,7 @@ const CrossSeedDialogComponent = ({
   onForceRefresh,
 }: CrossSeedDialogProps) => {
   const { t } = useTranslation(["torrents", "settings", "crossseed"])
+  const { formatISOTimestamp } = useDateTimeFormatters()
   const excludedIndexerEntries = useMemo(() => {
     if (!sourceTorrent?.excludedIndexers) {
       return []
@@ -210,7 +212,7 @@ const CrossSeedDialogComponent = ({
     }
     const report = buildCrossSeedTraceReport(decisionTrace, sourceTorrent?.name ?? torrent?.name ?? "", indexerNameMap)
     try {
-      await navigator.clipboard.writeText(report)
+      await copyTextToClipboard(report)
       toast.success(t("crossSeedDialog.trace.copied"))
     } catch {
       toast.error(t("crossSeedDialog.trace.copyFailed"))
@@ -260,7 +262,7 @@ const CrossSeedDialogComponent = ({
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                 {sourceTorrent?.contentType && (
                   <Badge variant="secondary" className="h-5 text-xs font-normal capitalize">
-                    {t(`crossseed:dirScan.contentTypeLabels.${sourceTorrent.contentType}`, sourceTorrent.contentType)}
+                    {t(`common:contentTypeLabels.${sourceTorrent.contentType}`, sourceTorrent.contentType)}
                   </Badge>
                 )}
                 {sourceTorrent?.category && <span>{t("crossSeedDialog.category", { category: sourceTorrent.category })}</span>}
@@ -369,7 +371,7 @@ const CrossSeedDialogComponent = ({
                       <>
                         <span className="font-medium">{t("crossSeedDialog.smartFilteringActive")}</span>
                         <Badge variant="secondary" className="text-xs">
-                          {t("crossSeedDialog.indexersFiltered", { count: excludedIndexerEntries.length, plural: excludedIndexerEntries.length === 1 ? "" : "s" })}
+                          {t("crossSeedDialog.indexersFiltered", { count: excludedIndexerEntries.length })}
                         </Badge>
                       </>
                     )}
@@ -490,7 +492,7 @@ const CrossSeedDialogComponent = ({
                               <span className="shrink-0">{formatBytes(result.size)}</span>
                               <span className="shrink-0">{t("crossSeedDialog.seeders", { count: result.seeders })}</span>
                               {result.matchReason && <span className="min-w-0 truncate">{t("crossSeedDialog.match", { reason: result.matchReason })}</span>}
-                              <span className="shrink-0">{formatCrossSeedPublishDate(result.publishDate)}</span>
+                              <span className="shrink-0">{formatISOTimestamp(result.publishDate)}</span>
                             </div>
                           </div>
                         </div>
@@ -770,14 +772,6 @@ function groupTraceReasons(trace: CrossSeedSearchDecisionTrace): Array<{
       count,
       candidates: trace.rejectedCandidates?.filter(candidate => candidate.reason === reason) ?? [],
     }))
-}
-
-function formatCrossSeedPublishDate(value: string): string {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    return value
-  }
-  return parsed.toLocaleString()
 }
 
 // Maps instance status codes to user-friendly display information

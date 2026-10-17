@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/autobrr/autobrr/pkg/ttlcache"
+	"github.com/autobrr/go-cache/ttlcache"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
@@ -158,8 +158,8 @@ type ClientPool struct {
 // creation budget.
 func NewClientPool(instanceStore *models.InstanceStore, errorStore *models.InstanceErrorStore, clientTimeout time.Duration) (*ClientPool, error) {
 	// Create cache with 30 second TTL since torrent data changes frequently
-	cache := ttlcache.New(ttlcache.Options[string, *TorrentResponse]{}.
-		SetDefaultTTL(30 * time.Second))
+	cache := ttlcache.New[string, *TorrentResponse](
+		ttlcache.SetDefaultTTL(30 * time.Second))
 
 	cp := &ClientPool{
 		clients:           make(map[int]*Client),
@@ -554,8 +554,8 @@ func (cp *ClientPool) performHealthChecks() {
 	for _, client := range clients {
 		instanceID := client.GetInstanceID()
 
-		// Skip if recently checked
-		if time.Since(client.GetLastHealthCheck()) < minHealthCheckInterval {
+		// Skip if recently checked, unless capabilities never loaded
+		if client.GetWebAPIVersion() != "" && time.Since(client.GetLastHealthCheck()) < minHealthCheckInterval {
 			continue
 		}
 

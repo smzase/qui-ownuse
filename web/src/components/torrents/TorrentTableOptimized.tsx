@@ -51,7 +51,7 @@ import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo
 import { createPortal } from "react-dom"
 import { useTranslation } from "react-i18next"
 import { InstancePreferencesDialog } from "../instances/preferences/InstancePreferencesDialog"
-import { torrentTableFeatures, type TorrentRow } from "./tanstackTableFeatures"
+import { torrentTableFeatures, type TorrentRow, type TorrentTableColumnDef } from "./tanstackTableFeatures"
 import { type TableViewMode } from "./TorrentTableColumns"
 import { type TorrentSortOptionValue } from "./torrentSortOptions"
 
@@ -59,7 +59,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -75,7 +74,7 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip"
 import { useInstanceMetadata } from "@/hooks/useInstanceMetadata"
-import { useInstancePreferences } from "@/hooks/useInstancePreferences.ts"
+import { useGlobalMaxRatio, useListenPort, useSubcategoriesEnabled } from "@/hooks/usePreferenceValues"
 import { useInstances } from "@/hooks/useInstances"
 import { api } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/dateTimeUtils"
@@ -83,6 +82,7 @@ import { useIncognitoMode } from "@/lib/incognito"
 import { isAllInstancesScope } from "@/lib/instances"
 import { resolveFooterSpeeds } from "@/lib/scoped-speeds"
 import { formatSpeedWithUnit, useSpeedUnits } from "@/lib/speedUnits"
+import { unitLabel } from "@/lib/unit-format"
 import { useSpreadsheetDisguise } from "@/lib/spreadsheet-disguise"
 import { resolveStreamFallbackStatus } from "@/lib/stream-status"
 import { buildTorrentFieldRequest, type TorrentFieldName, type TorrentFieldScope, type TorrentFieldSelection } from "@/lib/torrent-field-request"
@@ -103,6 +103,8 @@ import {
   ChevronDown,
   ChevronUp,
   Columns3,
+  Maximize2,
+  Minimize2,
   EthernetPort,
   Eye,
   EyeOff,
@@ -123,75 +125,31 @@ import {
 import { AddTorrentDialog, type AddTorrentDropPayload } from "./AddTorrentDialog"
 import { SelectAllHotkey } from "./SelectAllHotkey"
 import { TorrentDropZone } from "./TorrentDropZone"
-import { createColumns } from "./TorrentTableColumns"
 import { TableColumnHeader } from "./table/TableColumnHeader"
+import { ColumnOrderMenu } from "./ColumnOrderMenu"
+import { usePersistedStretchMode } from "@/hooks/usePersistedStretchMode"
 import { TorrentTableRow, type CompactRowSharedProps, type TorrentRowMenuProps } from "./table/TorrentTableRow"
 import { TorrentTableDialogs } from "./table/TorrentTableDialogs"
+import { DEFAULT_COLUMN_ORDER, DEFAULT_COLUMN_VISIBILITY, DEFAULT_UNIFIED_COLUMN_ORDER } from "@/lib/torrent-table/default-columns"
 
 // Default values for persisted state hooks (module scope for stable references)
-const DEFAULT_COLUMN_VISIBILITY = {
-  priority: true,
-  status_icon: true,
-  tracker_icon: true,
-  name: true,
-  size: true,
-  total_size: false,
-  progress: true,
-  state: true,
-  num_seeds: true,
-  num_leechs: true,
-  dlspeed: true,
-  upspeed: true,
-  eta: true,
-  ratio: true,
-  popularity: true,
-  category: true,
-  tags: true,
-  added_on: true,
-  completion_on: false,
-  tracker: false,
-  dl_limit: false,
-  up_limit: false,
-  downloaded: false,
-  uploaded: false,
-  downloaded_session: false,
-  uploaded_session: false,
-  amount_left: false,
-  time_active: false,
-  seeding_time: false,
-  save_path: false,
-  completed: false,
-  ratio_limit: false,
-  seen_complete: false,
-  last_activity: false,
-  availability: false,
-  infohash_v1: false,
-  infohash_v2: false,
-  reannounce: false,
-  private: false,
-  instance: true,
-}
 const DEFAULT_COLUMN_SIZING = {}
 const STREAM_STATUS_TRANSITION_DELAY_MS = 800
+const NAME_COLUMN_MIN_WIDTH = 160
+// ResizeObserver fires every frame while a window or panel is dragged, and a width
+// commit from that callback re-renders the whole table at ~10x the cost of the same
+// update from an event handler. Commit once the size has settled instead.
+const STRETCH_RESIZE_SETTLE_MS = 120
+// Must match the .ss-row-gutter width in spreadsheet-chrome.css.
+const SPREADSHEET_ROW_GUTTER_WIDTH = 44
+
+function columnDefId(col: TorrentTableColumnDef): string | null {
+  if ("id" in col && col.id) return col.id
+  if ("accessorKey" in col && typeof col.accessorKey === "string") return col.accessorKey
+  return null
+}
 
 type StreamPhase = "connecting" | "healthy" | "reconnecting" | "fallback"
-
-// Helper function to get default column order (module scope for stable reference)
-function getDefaultColumnOrder(): string[] {
-  const cols = createColumns(false, undefined, "bytes", undefined, undefined, undefined)
-  const order = cols.map(col => {
-    if ("id" in col && col.id) return col.id
-    if ("accessorKey" in col && typeof col.accessorKey === "string") return col.accessorKey
-    return null
-  }).filter((v): v is string => typeof v === "string")
-
-  const trackerIconIndex = order.indexOf("tracker_icon")
-  if (trackerIconIndex > -1 && trackerIconIndex !== 2) {
-    order.splice(2, 0, order.splice(trackerIconIndex, 1)[0])
-  }
-
-  return order
-}
 
 interface PersistedTorrentLayout {
   sorting: SortingState
@@ -226,7 +184,7 @@ interface TorrentTableOptimizedProps {
   instanceId: number
   instanceIds?: number[]
   readOnly?: boolean
-  filters?: TorrentFilters
+  filters: TorrentFilters
   selectedTorrent?: Torrent | null
   onTorrentSelect?: (torrent: Torrent | null) => void
   addTorrentModalOpen?: boolean
@@ -313,7 +271,10 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
   const { exportTorrents, isExporting: isExportingTorrent } = useTorrentExporter({ instanceId, incognitoMode })
   const [speedUnit, setSpeedUnit] = useSpeedUnits()
   const { formatTimestamp } = useDateTimeFormatters()
-  const { preferences } = useInstancePreferences(instanceId, { fetchIfMissing: false, enabled: instanceId > 0 })
+  const preferenceOptions = { fetchIfMissing: false, enabled: instanceId > 0 }
+  const instanceMaxRatio = useGlobalMaxRatio(instanceId, preferenceOptions)
+  const listenPort = useListenPort(instanceId, preferenceOptions)
+
   const { viewMode: desktopViewMode, cycleViewMode } = usePersistedCompactViewState("desktop")
 
   // Zoom level for the torrent list (persisted, synced with Torrents.tsx via custom event)
@@ -348,13 +309,15 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
   // Column visibility with persistence
   const [columnVisibility, setColumnVisibility] = usePersistedColumnVisibility(DEFAULT_COLUMN_VISIBILITY, torrentLayoutKey)
   // Column order with persistence (get default order at runtime to avoid initialization order issues)
+
+  const [stretchNameColumn, toggleStretchNameColumn] = usePersistedStretchMode(torrentLayoutKey)
   // Latest accessor for the table's leaf column ids — reassigned after the table
   // is created below; useColumnDnd reads it lazily at drag time.
   const leafColumnIdsRef = useRef<() => string[]>(() => [])
   const getLeafColumnIds = useCallback(() => leafColumnIdsRef.current(), [])
   const { columnOrder, setColumnOrder, sensors, onDragEnd } = useColumnDnd({
     instanceId: torrentLayoutKey,
-    defaultColumnOrder: getDefaultColumnOrder(),
+    defaultColumnOrder: isUnifiedView ? DEFAULT_UNIFIED_COLUMN_ORDER : DEFAULT_COLUMN_ORDER,
     getLeafColumnIds,
   })
   // Column sizing with persistence
@@ -475,8 +438,6 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
   const navigate = useNavigate()
 
   const {
-    globalFilter,
-    setGlobalFilter,
     effectiveSearch,
     columnFiltersExpr,
     combinedFiltersExpr,
@@ -488,20 +449,15 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
   const activeSortOrder: "asc" | "desc" = sorting.length > 0 ? (sorting[0].desc ? "desc" : "asc") : "desc"
   const isAllInstancesView = instanceId <= 0
 
-  // Memoized so the `?? []` fallback cannot mint a fresh array per render:
-  // these feed fetchTorrentField, whose identity anchors the shared row
-  // menu bundle.
-  const effectiveIncludedCategories = useMemo(
-    () => filters?.expandedCategories ?? filters?.categories ?? [],
-    [filters]
-  )
-  const effectiveExcludedCategories = useMemo(
-    () => filters?.expandedExcludeCategories ?? filters?.excludeCategories ?? [],
-    [filters]
-  )
-
   const { isHiddenDelayed, isVisible } = useDelayedVisibility(3000)
   const isVisibilitySettled = isHiddenDelayed || isVisible
+
+  // The list request; in cross-seed mode combinedFiltersExpr is the hash
+  // expression alone, unlike selectAllFilters which always joins the column filters.
+  const listFilters = useMemo(
+    () => ({ ...filters, expr: combinedFiltersExpr || undefined }),
+    [filters, combinedFiltersExpr]
+  )
 
   // Fetch torrents data with backend sorting
   const {
@@ -535,19 +491,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     pollingEnabled: isVisibilitySettled,
     instanceIds,
     search: effectiveSearch,
-    filters: {
-      status: filters?.status || [],
-      excludeStatus: filters?.excludeStatus || [],
-      categories: effectiveIncludedCategories,
-      excludeCategories: effectiveExcludedCategories,
-      tags: filters?.tags || [],
-      excludeTags: filters?.excludeTags || [],
-      trackers: filters?.trackers || [],
-      excludeTrackers: filters?.excludeTrackers || [],
-      expandedCategories: filters?.expandedCategories,
-      expandedExcludeCategories: filters?.expandedExcludeCategories,
-      expr: combinedFiltersExpr || undefined,
-    },
+    filters: listFilters,
     sort: activeSortField,
     order: activeSortOrder,
   })
@@ -685,9 +629,8 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     capabilitySupport: capabilities?.supportsTrackerHealth,
     responseSupport: trackerHealthSupported,
   })
-  const supportsSubcategories = isAllInstancesView? Boolean(subcategoriesFromData): (capabilities?.supportsSubcategories ?? false)
-  const subcategoriesAlwaysEnabled = capabilities?.subcategoriesAlwaysEnabled ?? false
-  const allowSubcategories = isAllInstancesView? Boolean(subcategoriesFromData): (supportsSubcategories && (subcategoriesAlwaysEnabled || (preferences?.use_subcategories ?? subcategoriesFromData ?? false)))
+  const instanceSubcategoriesEnabled = useSubcategoriesEnabled(instanceId, capabilities, subcategoriesFromData, preferenceOptions)
+  const allowSubcategories = isAllInstancesView? Boolean(subcategoriesFromData): instanceSubcategoriesEnabled
   const availableTags = isCrossInstanceEndpoint ? (tags ?? metadataTags) : metadataTags
   const availableCategories = isCrossInstanceEndpoint ? (categories ?? metadataCategories) : metadataCategories
   const isLoadingTags = isMetadataLoading && availableTags.length === 0
@@ -715,10 +658,6 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
   }, [isLoading, torrents.length])
 
   const hasSidebarFilters = useMemo(() => {
-    if (!filters) {
-      return false
-    }
-
     const {
       status = [],
       excludeStatus = [],
@@ -817,7 +756,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     speedUnit,
     trackerIcons,
     formatTimestamp,
-    preferences,
+    instanceMaxRatio,
     supportsTrackerHealth,
     isUnifiedView,
     isCrossInstanceEndpoint,
@@ -829,6 +768,24 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     t,
     sortedTorrents,
   })
+
+  // Stretch mode pushes Name's width through TanStack's columnSizing rather than CSS,
+  // so header drag/resize geometry stays correct. Summed from the column defs because
+  // the table (and its getSize) does not exist yet; every def sets a size.
+  const [containerWidth, setContainerWidth] = useState(0)
+  const fixedColsWidth = useMemo(() => {
+    return columns.reduce((sum, col) => {
+      const id = columnDefId(col)
+      if (!id || id === "name" || columnVisibility[id] === false) return sum
+      return sum + (columnSizing[id] ?? col.size ?? 0)
+    }, 0)
+  }, [columns, columnVisibility, columnSizing])
+  const availableWidth = containerWidth - (showRowGutter ? SPREADSHEET_ROW_GUTTER_WIDTH : 0)
+  const effectiveStretch = stretchNameColumn && fixedColsWidth + NAME_COLUMN_MIN_WIDTH <= availableWidth
+  const effectiveColumnSizing = useMemo(() => {
+    if (!effectiveStretch) return columnSizing
+    return { ...columnSizing, name: availableWidth - fixedColsWidth }
+  }, [effectiveStretch, columnSizing, availableWidth, fixedColsWidth])
 
   const table = useTable({
     features: torrentTableFeatures,
@@ -860,9 +817,8 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     // State management
     state: {
       sorting,
-      globalFilter,
       rowSelection,
-      columnSizing,
+      columnSizing: effectiveColumnSizing,
       columnVisibility,
       columnOrder,
       // Convert our custom ColumnFilter format to TanStack Table format when doing client-side filtering
@@ -874,7 +830,6 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
       }),
     },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     onRowSelectionChange: setRowSelection,
     onColumnSizingChange: setColumnSizing,
     onColumnVisibilityChange: setColumnVisibility,
@@ -925,6 +880,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     getVisibleRows: () => table.getRowModel().rows,
     sortedTorrents,
     columnFiltersExpr,
+    clientSideFiltering: isCrossSeedFiltering,
     filters,
     stats,
     totalCount,
@@ -995,7 +951,6 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
   const isConnectable = normalizedConnectionStatus === "connected"
   const isFirewalled = normalizedConnectionStatus === "firewalled"
   const ConnectionStatusIcon = isConnectable ? Globe : isFirewalled ? BrickWallFire : hasConnectionStatus ? Ban : Globe
-  const listenPort = metadata?.preferences?.listen_port
   const connectionStatusTooltip = hasConnectionStatus ? `${isConnectable ? t("statusBar.connectionConnectable") : connectionStatusDisplay}${listenPort ? `. ${t("statusBar.connectionPort", { port: listenPort })}` : ""}` : t("statusBar.connectionUnknown")
   const connectionStatusIconClass = hasConnectionStatus ? isConnectable ? "text-green-500" : isFirewalled ? "text-amber-500" : "text-destructive" : "text-muted-foreground"
   const connectionStatusAriaLabel = hasConnectionStatus ? t("statusBar.connectionAriaLabel", { status: connectionStatusDisplay || formattedConnectionStatus }) : t("statusBar.connectionAriaLabelUnknown")
@@ -1036,25 +991,15 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
       sort: activeSortField,
       order: activeSortOrder,
       search: effectiveSearch,
-      filters: {
-        status: filters?.status || [],
-        excludeStatus: filters?.excludeStatus || [],
-        categories: effectiveIncludedCategories,
-        excludeCategories: effectiveExcludedCategories,
-        tags: filters?.tags || [],
-        excludeTags: filters?.excludeTags || [],
-        trackers: filters?.trackers || [],
-        excludeTrackers: filters?.excludeTrackers || [],
-        expandedCategories: filters?.expandedCategories,
-        expandedExcludeCategories: filters?.expandedExcludeCategories,
-        expr: combinedFiltersExpr || undefined,
-      },
+      // The scope is only read without an explicit selection, so this is the
+      // select-all set: column filters AND expr, like a bulk action (#1925).
+      filters: selectAllFilters,
       excludeHashes: selectAllExcludeHashes,
       excludeTargets: selectAllExcludedTargets,
     }
     const response = await api.getTorrentField(instanceId, field, buildTorrentFieldRequest(scope, selection))
     return response.values
-  }, [instanceId, filters, effectiveIncludedCategories, effectiveExcludedCategories, combinedFiltersExpr, activeSortField, activeSortOrder, effectiveSearch, selectAllExcludeHashes, isCrossInstanceEndpoint, selectAllExcludedTargets, instanceIds])
+  }, [instanceId, selectAllFilters, activeSortField, activeSortOrder, effectiveSearch, selectAllExcludeHashes, isCrossInstanceEndpoint, selectAllExcludedTargets, instanceIds])
 
   // Virtualization setup with progressive loading
   const { rows } = table.getRowModel()
@@ -1077,20 +1022,36 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     backendLoadMore,
   })
 
+  // Layout effect so the first paint already has the stretched Name width.
+  useLayoutEffect(() => {
+    const el = parentRef.current
+    if (!el) return
+    setContainerWidth(el.clientWidth)
+    let settleTimer: ReturnType<typeof setTimeout> | undefined
+    const observer = new ResizeObserver(() => {
+      clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => setContainerWidth(el.clientWidth), STRETCH_RESIZE_SETTLE_MS)
+    })
+    observer.observe(el)
+    return () => {
+      clearTimeout(settleTimer)
+      observer.disconnect()
+    }
+  }, [parentRef])
+
   // Keyed on the state that changes widths, not on the per-render `table` object.
   const minTableWidth = useMemo(() => {
     return table.getVisibleLeafColumns().reduce((width, col) => {
       return width + col.getSize()
     }, 0)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columnVisibility, columnSizing])
+  }, [columnVisibility, effectiveColumnSizing])
 
   const { clearFiltersAtomically } = useFilterLifecycle({
     virtualizer,
     sortedTorrentsLength: sortedTorrents.length,
     onFilterChange,
     setColumnFilters,
-    setSorting,
     setLoadedRows,
     isCrossSeedFiltering,
     columnFiltersLength: columnFilters.length,
@@ -1156,7 +1117,6 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
 
   // Wrapper functions to adapt hook handlers to component needs
   const {
-    normalizedSelectionFilters,
     contextClientMeta,
     runAction,
     handleExportWrapper,
@@ -1202,7 +1162,6 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
     selectAllFilters,
     selectAllExcludeHashes,
     selectAllExcludedTargets,
-    filters,
     effectiveSearch,
     activeSortField,
     activeSortOrder,
@@ -1439,7 +1398,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
                             >
                               {compactSortOptions.map(option => (
                                 <DropdownMenuRadioItem key={option.value} value={option.value} className="text-sm">
-                                  {option.label}
+                                  {t(option.labelKey)}
                                 </DropdownMenuRadioItem>
                               ))}
                             </DropdownMenuRadioGroup>
@@ -1484,15 +1443,10 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
                             variant="outline"
                             size="icon"
                             className="relative mr-1"
-                            onClick={() => {
-                              // Use atomic filter clearing to avoid race conditions
-                              // Only clear column filters in cross-seed mode, clear all filters otherwise
-                              const clearingMode = isCrossSeedFiltering ? "columns-only" : "all"
-                              clearFiltersAtomically(clearingMode)
-                            }}
+                            onClick={() => clearFiltersAtomically("columns-only")}
                           >
                             <X className="h-4 w-4" />
-                            <span className="sr-only">{t("columnFilter.clearFilters")}</span>
+                            <span className="sr-only">{t("tableView.clearAllColumnFilters", { count: columnFilters.length })}</span>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>{t("tableView.clearAllColumnFilters", { count: columnFilters.length })}</TooltipContent>
@@ -1525,56 +1479,63 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
                     </Tooltip>
 
                     {desktopViewMode !== "compact" && (
-                      <DropdownMenu>
+                      <>
                         <Tooltip disableHoverableContent={true}>
-                          <TooltipTrigger
-                            asChild
-                            onFocus={(e) => {
-                              // Prevent tooltip from showing on focus - only show on hover
-                              e.preventDefault()
-                            }}
-                          >
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="icon"
-                              >
-                                <Columns3 className="h-4 w-4" />
-                                <span className="sr-only">{t("tableView.toggleColumns")}</span>
-                              </Button>
-                            </DropdownMenuTrigger>
+                          <TooltipTrigger asChild onFocus={(e) => e.preventDefault()}>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              // Muted while the preference is on but the visible columns do not leave room for Name.
+                              className={stretchNameColumn && !effectiveStretch ? "text-muted-foreground" : undefined}
+                              onClick={toggleStretchNameColumn}
+                            >
+                              {stretchNameColumn
+                                ? <Minimize2 className="h-4 w-4" />
+                                : <Maximize2 className="h-4 w-4" />}
+                              <span className="sr-only">{stretchNameColumn ? t("tableView.scrollMode") : t("tableView.stretchMode")}</span>
+                            </Button>
                           </TooltipTrigger>
-                          <TooltipContent>{t("tableView.toggleColumns")}</TooltipContent>
+                          <TooltipContent>
+                            {stretchNameColumn ? t("tableView.scrollMode") : t("tableView.stretchMode")}
+                            {stretchNameColumn && !effectiveStretch && (
+                              <span className="block font-normal">{t("tableView.stretchInactive")}</span>
+                            )}
+                          </TooltipContent>
                         </Tooltip>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuLabel>{t("tableView.toggleColumns")}</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          {table
-                            .getAllColumns()
-                            .filter(
-                              (column) =>
-                                column.getCanHide()
-                            )
-                            .map((column) => {
-                              return (
-                                <DropdownMenuCheckboxItem
-                                  key={column.id}
-                                  className="capitalize"
-                                  checked={column.getIsVisible()}
-                                  onCheckedChange={(value) =>
-                                    column.toggleVisibility(!!value)
-                                  }
-                                  onSelect={(e) => e.preventDefault()}
+
+                        <DropdownMenu>
+                          <Tooltip disableHoverableContent={true}>
+                            <TooltipTrigger
+                              asChild
+                              onFocus={(e) => {
+                                // Prevent tooltip from showing on focus - only show on hover
+                                e.preventDefault()
+                              }}
+                            >
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
                                 >
-                                  <span className="truncate">
-                                    {(column.columnDef.meta as { headerString?: string })?.headerString ||
-                                      (typeof column.columnDef.header === "string" ? column.columnDef.header : column.id)}
-                                  </span>
-                                </DropdownMenuCheckboxItem>
-                              )
-                            })}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                                  <Columns3 className="h-4 w-4" />
+                                  <span className="sr-only">{t("tableView.toggleColumns")}</span>
+                                </Button>
+                              </DropdownMenuTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("tableView.toggleColumns")}</TooltipContent>
+                          </Tooltip>
+                          <DropdownMenuContent align="end" className="w-52">
+                            <DropdownMenuLabel>{t("tableView.toggleColumns")}</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <ColumnOrderMenu
+                              table={table}
+                              columnOrder={columnOrder}
+                              sensors={sensors}
+                              onDragEnd={onDragEnd}
+                            />
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
                     )}
                   </>
                 )
@@ -1650,6 +1611,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
                 minTableWidth={minTableWidth}
                 viewMode={desktopViewMode}
                 showRowGutter={showRowGutter}
+                stretchedColumnId={effectiveStretch ? "name" : undefined}
               />
 
               {/* Body */}
@@ -1819,7 +1781,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
                           className="h-6 px-2 text-xs text-muted-foreground hover:text-accent-foreground"
                         >
                           <ArrowUpDown className="h-3 w-3" />
-                          <span>{speedUnit === "bytes" ? "MiB/s" : "Mbps"}</span>
+                          <span>{speedUnit === "bytes" ? unitLabel("MiB", true) : unitLabel("Mb", true)}</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -1984,7 +1946,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
                           >
                             <EthernetPort className="h-3.5 w-3.5 text-muted-foreground" />
                             <span>
-                              {effectiveServerState?.last_external_address_v4 && effectiveServerState?.last_external_address_v6? "IPv4 & IPv6": effectiveServerState?.last_external_address_v4? "IPv4": "IPv6"}
+                              {effectiveServerState?.last_external_address_v4 && effectiveServerState?.last_external_address_v6? t("torrents:statusBar.dualStack"): effectiveServerState?.last_external_address_v4? "IPv4": "IPv6"}
                             </span>
                           </Badge>
                         </TooltipTrigger>
@@ -2092,7 +2054,7 @@ export const TorrentTableOptimized = memo(function TorrentTableOptimized({
           handleReannounceWrapper={handleReannounceWrapper}
           handleTmmConfirmWrapper={handleTmmConfirmWrapper}
           proceedToLocationDialog={proceedToLocationDialog}
-          normalizedSelectionFilters={normalizedSelectionFilters}
+          selectAllFilters={selectAllFilters}
           contextClientMeta={contextClientMeta}
           isAllSelected={isAllSelected}
           effectiveSelectionCount={effectiveSelectionCount}

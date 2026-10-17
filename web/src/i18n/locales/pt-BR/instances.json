@@ -1,4 +1,5 @@
 {
+  "migrationHint": "Usa Deluge, rTorrent ou Transmission? <docs>Migre para o qBittorrent com nossa ferramenta de migração</docs>",
   "card": {
     "status": {
       "disabled": "Desativado",
@@ -10,8 +11,7 @@
       "disableInstance": "Desativar instância",
       "enableInstance": "Ativar instância",
       "moveUp": "Mover para cima",
-      "moveDown": "Mover para baixo",
-      "instanceSettings": "Configurações da Instância"
+      "moveDown": "Mover para baixo"
     },
     "actions": {
       "edit": "Editar",
@@ -52,27 +52,6 @@
       "deleteFailedDescription": "Falha ao excluir a instância"
     }
   },
-  "sharing": {
-    "batchTitle": "Compartilhar instâncias",
-    "batchDescription": "Selecione as instâncias e os usuários que podem acessá-las.",
-    "instanceOwner": "Proprietário da instância",
-    "selectInstances": "Selecionar instâncias",
-    "selectUsers": "Selecionar usuários",
-    "shared": "Instâncias compartilhadas",
-    "shareFailed": "Falha ao compartilhar instâncias",
-    "cancel": "Cancelar",
-    "badge": "Compartilhada",
-    "manage": "Gerenciar compartilhamento",
-    "leave": "Sair da instância compartilhada",
-    "title": "Compartilhar instância",
-    "description": "Escolha os usuários que podem acessar esta instância.",
-    "selectUser": "Selecionar um usuário",
-    "share": "Compartilhar",
-    "remove": "Remover",
-    "sharedWith": "Compartilhada com",
-    "empty": "Esta instância não é compartilhada com ninguém.",
-    "left": "Você saiu da instância compartilhada."
-  },
   "errorDisplay": {
     "passwordRequired": "Senha Obrigatória",
     "decryptionDescription": "Não foi possível descriptografar a senha salva. Isso geralmente acontece quando o segredo da sessão é alterado.",
@@ -81,16 +60,12 @@
   },
   "form": {
     "labels": {
-      "clientType": "Tipo de Cliente",
-      "clientTypeDescription": "O cliente torrent ao qual esta instância se conecta.",
       "instanceName": "Nome da Instância",
       "url": "URL",
       "skipTlsVerification": "Ignorar Verificação de Certificado TLS",
       "skipTlsDescription": "Permite conexões com instâncias do qBittorrent que usam certificados autoassinados ou não confiáveis.",
       "localFilesystemAccess": "Acesso ao Sistema de Arquivos Local",
       "localFilesystemDescription": "Ative se o qui puder acessar os caminhos de download desta instância (necessário para detecção de hardlinks em automações).",
-      "authBypass": "Ignorar Autenticação",
-      "authBypassDescription": "Ative quando o qBittorrent ignora a autenticação para localhost ou IPs na lista de permissões",
       "username": "Usuário",
       "password": "Senha",
       "httpBasicAuth": "Autenticação Básica HTTP (Basic Auth)",
@@ -99,7 +74,8 @@
       "basicAuthPassword": "Senha da Basic Auth",
       "authType": "Tipo de Autenticação",
       "authTypeDescription": "Selecione como o qui deve se autenticar no qBittorrent.",
-      "authTypeTransmissionDescription": "Selecione como o qui deve se autenticar no daemon do Transmission."
+      "clientType": "Tipo de Cliente",
+      "clientTypeDescription": "O cliente torrent ao qual esta instância se conecta."
     },
     "placeholders": {
       "instanceName": "ex: Servidor Principal ou qBittorrent de Casa",
@@ -147,42 +123,6 @@
   "settingsButton": {
     "tooltip": "Configurações da Instância"
   },
-  "proxySettings": {
-    "loading": "Carregando configurações de proxy...",
-    "title": "Configuração de Proxy",
-    "proxyType": "Tipo de Proxy",
-    "proxyTypeDescription": "Selecione o tipo de proxy para rotear as conexões",
-    "serverTitle": "Servidor Proxy",
-    "serverLabel": "Servidor Proxy",
-    "serverPlaceholder": "proxy.exemplo.com",
-    "serverDescription": "Hostname ou endereço IP do servidor proxy",
-    "port": "Porta",
-    "portDescription": "Porta do servidor proxy",
-    "authTitle": "Autenticação",
-    "useAuth": "Usar autenticação",
-    "useAuthDescription": "Ative se o seu servidor proxy exigir usuário/senha",
-    "username": "Usuário",
-    "password": "Senha",
-    "optionsTitle": "Opções de Proxy",
-    "peerConnections": "Usar proxy para conexões com os pares",
-    "peerConnectionsDescription": "Rotear conexões BitTorrent de pares através do proxy",
-    "torrentsOnly": "Usar proxy apenas para torrents",
-    "torrentsOnlyDescription": "Usar proxy apenas para tráfego BitTorrent, não para outras conexões",
-    "hostnameLookup": "Usar proxy para pesquisas de hostname",
-    "hostnameLookupDescription": "Resolver hostnames através do servidor proxy",
-    "update": "Atualizar Configurações de Proxy",
-    "updating": "Atualizando...",
-    "types": {
-      "none": "Nenhum",
-      "socks4": "SOCKS4",
-      "socks5": "SOCKS5",
-      "http": "HTTP"
-    },
-    "toast": {
-      "updated": "Configurações de proxy atualizadas com sucesso",
-      "failed": "Falha ao atualizar configurações de proxy"
-    }
-  },
   "passwordBanner": {
     "title": "Problemas de Senha Detectados",
     "description": "Algumas instâncias não conseguem descriptografar as senhas salvas, provavelmente devido a uma mudança de configuração. Verifique as instâncias afetadas abaixo para resolver isso."
@@ -211,50 +151,24 @@
       "tabs": {
         "instance": "Instância",
         "speed": "Velocidade",
-        "queue": "Fila",
-        "files": "Arquivos",
-        "seeding": "Seeding",
         "connection": "Conexão",
-        "discovery": "Descoberta",
         "advanced": "Avançado",
-        "transmission": "Transmission"
+        "behavior": "Comportamento",
+        "downloads": "Downloads",
+        "bittorrent": "BitTorrent",
+        "rss": "RSS",
+        "webui": "WebUI"
       },
       "sections": {
         "instanceConfig": {
           "title": "Configuração da Instância",
           "description": "Configure opções de conexão, autenticação e acesso"
         },
-        "speedLimits": {
-          "title": "Limites de Velocidade",
-          "description": "Configure limites de velocidade de download e upload"
-        },
         "queueManagement": {
-          "title": "Gerenciamento de Fila",
-          "description": "Configure os limites de torrents ativos e fila"
-        },
-        "fileManagement": {
-          "title": "Gerenciamento de Arquivos",
-          "description": "Configure os caminhos dos arquivos e organização de torrents"
+          "title": "Gerenciamento de Fila"
         },
         "seedingLimits": {
-          "title": "Limites de Seeding",
-          "description": "Configure os limites de taxa de proporção e tempo de seeding"
-        },
-        "connectionSettings": {
-          "title": "Configurações de Conexão",
-          "description": "Configure a porta de escuta, protocolos e limites de conexão"
-        },
-        "networkDiscovery": {
-          "title": "Descoberta de Rede",
-          "description": "Configure protocolos de descoberta de pares e rastreadores"
-        },
-        "advancedSettings": {
-          "title": "Configurações Avançadas",
-          "description": "Ajustes de desempenho, disco, pares e configurações de segurança"
-        },
-        "transmission": {
-          "title": "Preferências do daemon",
-          "description": "Configure as definições de sessão do daemon Transmission: torrents, velocidade, peers e rede"
+          "title": "Limites de Seeding"
         }
       }
     },
@@ -266,8 +180,6 @@
         "skipTlsDescription": "Permite conexões com instâncias do qBittorrent que usam certificados autoassinados ou não confiáveis.",
         "localFilesystemAccess": "Acesso ao Sistema de Arquivos Local",
         "localFilesystemDescription": "Ative se o qui puder acessar os caminhos de download desta instância.",
-        "qbittorrentLogin": "Login do qBittorrent",
-        "qbittorrentLoginDescription": "Desative se o qBittorrent ignorar a autenticação para localhost ou IPs permitidos.",
         "httpBasicAuth": "Autenticação Básica HTTP",
         "httpBasicAuthDescription": "Ative se o seu qBittorrent estiver atrás de um proxy reverso com Basic Auth",
         "username": "Usuário",
@@ -303,15 +215,11 @@
       "saving": "Salvando..."
     },
     "speedLimits": {
-      "loading": "Carregando limites de velocidade...",
-      "loadFailed": "Falha ao carregar preferências",
       "downloadLimit": "Limite de Download",
       "uploadLimit": "Limite de Upload",
       "altDownloadLimit": "Limite de Download Alternativo",
       "altUploadLimit": "Limite de Upload Alternativo",
       "scheduleAltLimits": "Programar o uso de limites alternativos",
-      "from": "De:",
-      "to": "Para:",
       "when": "Quando:",
       "everyDay": "Todos os dias",
       "everyWeekday": "Dias da semana",
@@ -322,29 +230,9 @@
       "thursday": "Quinta-feira",
       "friday": "Sexta-feira",
       "saturday": "Sábado",
-      "sunday": "Domingo",
-      "schedule": "Programação",
-      "start": "Início",
-      "end": "Fim",
-      "timeLabel": "Hora ({{label}})",
-      "hourLabel": "Hora de {{label}} (0-23)",
-      "minuteLabel": "Minuto de {{label}} (0-59)",
-      "unlimitedPlaceholder": "0 (Ilimitado)",
-      "rateUnit": "MiB/s",
-      "validation": {
-        "downloadLimit": "O limite de download global deve ser > 0 ou desativado",
-        "uploadLimit": "O limite de upload global deve ser > 0 ou desativado",
-        "altDownloadLimit": "O limite alternativo de download deve ser > 0 ou desativado",
-        "altUploadLimit": "O limite alternativo de upload deve ser > 0 ou desativado"
-      },
-      "toast": {
-        "success": "Limites de velocidade atualizados",
-        "error": "Falha ao atualizar limites de velocidade"
-      }
+      "sunday": "Domingo"
     },
     "queueManagement": {
-      "loading": "Carregando configurações da fila...",
-      "loadFailed": "Falha ao carregar preferências",
       "enableQueueing": "Ativar Fila",
       "enableQueueingDescription": "Limitar o número de torrents ativos",
       "maxActiveDownloads": "Máximo de Downloads Ativos",
@@ -357,25 +245,9 @@
       "maxCheckingTorrentsDescription": "Máximo de torrents verificando os arquivos simultaneamente",
       "dontCountSlowTorrents": "Não Contar Torrents Lentos",
       "dontCountSlowTorrentsDescription": "Torrents lentos não contam nos limites ativos acima",
-      "slowTorrentDlRateThreshold": "Limite de Taxa de Download (KiB/s)",
-      "slowTorrentUlRateThreshold": "Limite de Taxa de Upload (KiB/s)",
-      "slowTorrentInactiveTimer": "Temporizador de Inatividade do Torrent (segundos)",
-      "slowTorrentInactiveTimerDescription": "Por quanto tempo ambas as taxas devem permanecer abaixo dos limites antes de o torrent ser considerado lento",
-      "validation": {
-        "maxActiveDownloads": "Downloads ativos devem ser > -1",
-        "maxActiveUploads": "Uploads ativos devem ser > -1",
-        "maxActiveTorrents": "Torrents ativos devem ser > -1"
-      },
-      "toast": {
-        "success": "Configurações da fila atualizadas",
-        "error": "Falha ao atualizar configurações da fila"
-      }
+      "slowTorrentInactiveTimerDescription": "Por quanto tempo ambas as taxas devem permanecer abaixo dos limites antes de o torrent ser considerado lento"
     },
     "fileManagement": {
-      "loading": "Carregando configurações de arquivo...",
-      "loadFailed": "Falha ao carregar preferências",
-      "saving": "Salvando...",
-      "saveChanges": "Salvar Alterações",
       "autoTorrentManagement": "Gerenciamento Automático de Torrents",
       "autoTorrentManagementDescription": "Usar caminhos baseados em categoria para downloads",
       "relocateOnCategoryChange": "Realocar ao Alterar Categoria",
@@ -408,9 +280,7 @@
       "runOnTorrentFinished": "Executar ao Concluir",
       "runOnTorrentFinishedDescription": "Acionado quando o download do torrent for concluído",
       "command": "Comando",
-      "selectContentLayout": "Selecione o layout de conteúdo",
       "autorunProgramTip": "Dica: envolva marcadores com aspas, ex: \"%N\", para preservar espaços.",
-      "autorunUnsupported": "Requer qBittorrent 4.5.0+ (API Web {{minimum}}+). Esta instância usa a versão {{version}}.",
       "supportedPlaceholders": "Marcadores Suportados (diferencia maiúsculas e minúsculas)",
       "placeholderLabels": {
         "torrentName": "Nome do torrent",
@@ -442,39 +312,22 @@
         "customSavePathLabel": "Caminho de Salvamento",
         "customSavePathPlaceholder": "caminho",
         "remove": "Remover"
-      },
-      "toast": {
-        "success": "Configurações de arquivos atualizadas",
-        "error": "Falha ao atualizar configurações de arquivos"
       }
     },
     "seedingLimits": {
-      "loading": "Carregando limites de seeding...",
-      "loadFailed": "Falha ao carregar preferências",
       "enableShareRatioLimit": "Ativar Limite de Ratio",
       "enableShareRatioLimitDescription": "Parar de semear quando a proporção for atingida",
       "maxShareRatio": "Ratio Máximo",
       "maxShareRatioDescription": "Parar de semear nesta proporção de upload/download",
       "enableSeedingTimeLimit": "Ativar Limite de Tempo",
       "enableSeedingTimeLimitDescription": "Parar de semear após o tempo especificado",
-      "maxSeedingTime": "Tempo Máximo (minutos)",
-      "maxSeedingTimeDescription": "Parar de semear após este limite de tempo em minutos",
-      "toast": {
-        "success": "Limites de seeding atualizados",
-        "error": "Falha ao atualizar limites de seeding"
-      }
+      "maxSeedingTimeDescription": "Parar de semear após este limite de tempo em minutos"
     },
     "connectionSettings": {
-      "loading": "Carregando configurações de conexão...",
-      "versionWarningTitle": "Detalhes de versão limitados",
-      "versionWarningDescription": "Não foi possível confirmar os detalhes da versão do qBittorrent, então todas as opções estão visíveis.",
       "listeningPort": "Porta de Escuta",
       "portForIncoming": "Porta para conexões de entrada",
       "portDescription": "Porta usada para conexões BitTorrent de entrada",
       "upnpLeaseDuration": "Duração da locação UPnP (0 = permanente)",
-      "upnpLeaseDurationDescription": "Duração em minutos (apenas libtorrent 2.x)",
-      "useRandomPort": "Usar porta aleatória a cada inicialização",
-      "useRandomPortDescription": "Selecionar uma porta aleatória ao iniciar o qBittorrent",
       "enableUpnp": "Ativar UPnP/NAT-PMP",
       "enableUpnpDescription": "Encaminhar porta automaticamente através do seu roteador",
       "protocolSettings": "Configurações de Protocolo",
@@ -484,15 +337,10 @@
       "protocolTcp": "TCP",
       "protocolUtp": "μTP",
       "utpTcpMixedMode": "Modo Misto μTP-TCP",
-      "selectMode": "Selecionar modo",
       "utpTcpMixedModeDescription": "Como lidar com conexões mistas μTP/TCP",
       "preferTcp": "Preferir TCP",
       "peerProportional": "Proporcional aos pares",
       "networkInterface": "Interface de Rede",
-      "networkInterfaceReadOnly": "Interface de Rede (Somente Leitura)",
-      "networkInterfaceDescription": "Interface de rede ativa atualmente.",
-      "interfaceIpAddress": "Endereço IP da Interface (Somente Leitura)",
-      "interfaceIpAddressDescription": "Endereço IP da interface atual.",
       "autoDetect": "Autodetectar",
       "reannounceOnIpChange": "Re-anunciar aos trackers quando o IP mudar",
       "reannounceOnIpChangeDescription": "Anunciar automaticamente aos trackers quando seu IP mudar",
@@ -507,7 +355,6 @@
       "maxUploadSlotsPerTorrentDescription": "Máximo de slots de upload para cada torrent",
       "allowMultiConnections": "Permitir múltiplas conexões do mesmo IP",
       "allowMultiConnectionsDescription": "Permitir várias conexões de pares na mesma rede/NAT",
-      "outgoingPorts": "Portas de Saída",
       "outgoingPortsMin": "Portas de saída (Mínimo)",
       "outgoingPortsMinDescription": "Porta mínima para conexões de saída (0 = sem limite)",
       "outgoingPortsMax": "Portas de saída (Máximo)",
@@ -522,31 +369,15 @@
       "applyIpFilterToTrackersDescription": "Filtrar também as conexões com os trackers",
       "bannedIps": "Endereços IP banidos manualmente",
       "bannedIpsPlaceholder": "Um IP por linha:\n192.168.1.100\n10.0.0.50",
-      "bannedIpsDescription": "Adicionar endereços IP para banir de conectar (um por linha)",
-      "validation": {
-        "listenPort": "A porta de escuta deve estar entre 0 e 65535",
-        "maxConnections": "O limite máximo de conexões globais deve ser > 0 ou desativado",
-        "maxConnectionsPerTorrent": "O limite máximo de conexões por torrent deve ser > 0 ou desativado",
-        "maxUploadSlots": "Os slots de upload globais devem ser > 0 ou desativados",
-        "maxUploadSlotsPerTorrent": "Os slots de upload por torrent devem ser > 0 ou desativados",
-        "outgoingPortsMin": "A porta de saída mínima deve estar entre 0 e 65535",
-        "outgoingPortsMax": "A porta de saída máxima deve estar entre 0 e 65535"
-      },
-      "toast": {
-        "success": "Configurações de conexão atualizadas",
-        "error": "Falha ao atualizar configurações de conexão"
-      }
+      "bannedIpsDescription": "Adicionar endereços IP para banir de conectar (um por linha)"
     },
     "networkDiscovery": {
-      "loading": "Carregando configurações de descoberta de rede...",
-      "peerDiscovery": "Descoberta de Pares",
       "enableDht": "Ativar DHT (rede descentralizada)",
       "enableDhtDescription": "Tabela de Hash Distribuída para encontrar pares sem trackers",
       "enablePex": "Ativar PeX (Troca de Pares)",
       "enablePexDescription": "Trocar listas de pares com outros clientes",
       "enableLsd": "Ativar LSD (Descoberta de Serviços Locais)",
       "enableLsdDescription": "Encontrar pares na rede local",
-      "trackerSettings": "Configurações do Tracker",
       "announceToAllTiers": "Anunciar para todas as camadas (tiers)",
       "announceToAllTiersDescription": "Anunciar para todas as camadas de trackers de uma vez",
       "announceToAllTrackers": "Anunciar para todos os trackers em uma camada",
@@ -560,25 +391,14 @@
       "enableAnonymousMode": "Ativar modo anônimo",
       "enableAnonymousModeDescription": "Ocultar identificação e versão do seu cliente",
       "resolvePeerCountries": "Resolver países dos pares",
-      "resolvePeerCountriesDescription": "Exibir a bandeira do país de cada par (consome banda extra)",
-      "toast": {
-        "success": "Configurações de descoberta atualizadas",
-        "error": "Falha ao atualizar configurações de descoberta"
-      }
+      "resolvePeerCountriesDescription": "Exibir a bandeira do país de cada par (consome banda extra)"
     },
     "advancedNetwork": {
-      "loading": "Carregando configurações avançadas...",
-      "versionWarningTitle": "Exibindo todas as opções",
-      "versionWarningDescription": "Não foi possível confirmar a versão exata do qBittorrent, portanto todas as opções avançadas estão disponíveis.",
-      "trackerSettings": "Configurações do Tracker",
       "announceIp": "Endereço IP reportado aos trackers",
       "announceIpDescription": "IP para anunciar (deixe vazio para auto-detecção). Requer reinicialização.",
-      "performanceOptimization": "Otimização de Desempenho",
       "limitUtpProtocol": "Aplicar limite de velocidade ao protocolo μTP",
-      "limitUtpProtocolDescription": "Evita sobrecarregar peers na mesma rede (LAN)",
       "limitTcpOverhead": "Aplicar limite à sobrecarga (overhead) de transporte",
       "limitTcpOverheadDescription": "Inclui overhead do protocolo na contagem de limites de velocidade",
-      "limitUtpConnections": "Aplicar limite às conexões μTP",
       "limitUtpConnectionsDescription": "Aplica os limites de upload/download nas conexões μTP",
       "peerTosByte": "Byte ToS dos Pares",
       "peerTosDescription": "Byte de Tipo de Serviço para as conexões com pares",
@@ -596,7 +416,6 @@
       "sendBufferLowWatermarkDescription": "Limite mínimo para o buffer de socket",
       "watermarkFactor": "Fator da Marca d'água",
       "watermarkFactorDescription": "Porcentagem da marca d'água do buffer",
-      "diskIoMemory": "Disco e Memória",
       "coalesceReadsWrites": "Agrupar (coalesce) leituras e gravações",
       "coalesceReadsWritesDescription": "Combina I/O sequencial para melhorar o desempenho no disco",
       "asyncIoThreads": "Threads de I/O Assíncrono",
@@ -615,26 +434,15 @@
       "diskCacheTtlDescription": "Tempo de vida de dados cacheados na memória",
       "workingSetLimit": "Limite do Working Set",
       "workingSetLimitDescription": "Limite de uso na RAM (Working Set limit)",
-      "peerManagement": "Gerenciamento de Pares",
       "peerTurnover": "Renovação (Turnover) de Pares",
       "peerTurnoverDescription": "Porcentagem de pares a desconectar/reconectar para encontrar melhores conexões",
       "turnoverCutoff": "Corte de Renovação",
       "turnoverCutoffDescription": "Porcentagem para o threshold de renovação",
       "turnoverInterval": "Intervalo da Renovação",
       "turnoverIntervalDescription": "De quanto em quanto tempo renovar os pares",
-      "securityIpFiltering": "Segurança",
       "blockPrivilegedPorts": "Bloquear portas privilegiadas",
       "blockPrivilegedPortsDescription": "Bloqueia conexões a pares usando portas menores que 1024",
-      "validation": {
-        "checkingMemoryUse": "A memória na checagem deve estar entre 0 e 1024",
-        "peerTurnover": "O turnover deve ser de 0 a 100",
-        "peerTurnoverCutoff": "O cutoff deve ser de 0 a 100",
-        "peerTurnoverInterval": "O intervalo deve ser de 0 a 3600 segundos"
-      },
-      "toast": {
-        "success": "Configurações avançadas atualizadas",
-        "error": "Falha ao atualizar configurações avançadas"
-      }
+      "unitSeconds": "segundos"
     },
     "reannounce": {
       "title": "Reanunciar",
@@ -642,7 +450,7 @@
       "saving": "Salvando..."
     },
     "orphanScan": {
-      "configureTitle": "Configurar Varredura",
+      "configureTitle": "Configurar Varredura de Órfãos",
       "saveChanges": "Salvar",
       "collapse": "Colapsar",
       "expand": "Expandir"
@@ -659,62 +467,16 @@
       "enable": "Ativar"
     },
     "workflows": {
-      "title": "Workflows (Automações)",
-      "description": "Exclusões, pausas e limites automatizados.",
-      "applyNow": "Aplicar agora",
-      "addRule": "Adicionar Regra",
-      "loadingRules": "Carregando regras...",
-      "noAutomations": "Nenhuma automação. Adicione uma para automatizar ações em torrents.",
-      "noActionsSet": "Nenhuma ação definida",
-      "disabled": "Desativado",
       "allTrackers": "Todos os trackers",
-      "edit": "Editar",
-      "speedLimits": "Limites de velocidade",
-      "shareLimits": "Limites de ratio",
       "pause": "Pausar",
       "recheck": "Re-verificar",
       "reannounce": "Reanunciar",
-      "autoTmmOn": "AutoTMM ligado",
-      "autoTmmOff": "AutoTMM desligado",
-      "delete": "Excluir",
-      "externalProgram": "Programa externo",
-      "upload": "Upload",
-      "download": "Download",
-      "ratio": "Proporção",
-      "seedTime": "Tempo de seed",
-      "minuteSuffix": "m",
-      "deleteWithFilesPreserveCrossSeeds": "Excluir com arquivos (preservar cross-seeds)",
-      "deleteWithFilesIncludeCrossSeeds": "Excluir com arquivos (incluir cross-seeds)",
-      "deleteWithFiles": "Excluir com arquivos",
-      "deleteKeepFiles": "Excluir (manter arquivos)",
-      "moveToCategory": "Mover p/ categoria: {{category}}",
-      "programId": "Programa: {{id}}",
-      "trackerDerivedTag": "Tag do tracker",
-      "noTags": "Sem tags",
-      "fullSync": "Sinc. total",
-      "addOnly": "Apenas adicionar",
-      "removeOnly": "Apenas remover",
-      "deleteDialog": {
-        "title": "Excluir Regra",
-        "description": "Tem certeza de que deseja excluir \"{{name}}\"? Esta ação não pode ser desfeita.",
-        "cancel": "Cancelar",
-        "delete": "Excluir"
-      },
-      "actionCount_one": "{{count}} ação",
-      "actionCount_other": "{{count}} ações",
-      "toast": {
-        "workflowDeleted": "Workflow excluído",
-        "deleteAutomationFailed": "Falha ao excluir",
-        "toggleRuleFailed": "Falha ao alternar status da regra",
-        "workflowsApplied": "Workflows aplicados",
-        "applyAutomationsFailed": "Falha ao aplicar"
-      }
+      "minuteSuffix": "m"
     },
     "workflowsOverview": {
       "title": "Workflows",
       "tooltip": "Regras de automação baseadas em condições.\nExecute limites de velocidade, pausas, deleções, mudança de categorias e tags.",
       "description": "Automatize o gerenciamento de torrents com regras condicionais.",
-      "noInstancesTitle": "Workflows",
       "noInstancesDescription": "Nenhuma instância configurada. Adicione uma em Configurações.",
       "activeCount": "{{enabled}}/{{total}} ativas",
       "today": "{{count}} hoje",
@@ -752,7 +514,6 @@
       "dryRun": "Simulação (Dry run)",
       "removed": "Removido",
       "executed": "Executado",
-      "hashCopied": "Hash copiado",
       "copyHash": "Copiar hash",
       "original": "Original: {{domain}}",
       "programLabel": "Programa: {{name}}",
@@ -776,12 +537,13 @@
       "xsSafe": "XS seguro",
       "plusXs": "+ XS",
       "plusFiles": "+ arquivos",
-      "tagActions": "{{count}} ação de tag",
-      "tagActions_plural": "{{count}} ações de tag",
+      "tagActions_one": "{{count}} ação de tag",
+      "tagActions_other": "{{count}} ações de tag",
       "program": "Programa",
       "runDryRunNow": "Rodar simulação agora",
       "duplicate": "Duplicar",
       "copyTo": "Copiar para...",
+      "editJSON": "Editar como JSON",
       "exportJSON": "Exportar JSON",
       "dragToReorder": "Arraste para reordenar",
       "actions": {
@@ -873,11 +635,24 @@
         "title": "Importar Workflow",
         "description": "Cole o JSON do workflow. Ele será criado como desativado.",
         "placeholder": "JSON...",
-        "invalidImportData": "Formato inválido",
         "importFailed": "Falha ao importar",
         "cancel": "Cancelar",
         "importing": "Importando...",
-        "import": "Importar"
+        "import": "Importar",
+        "errors": {
+          "invalidJson": "Formato JSON inválido",
+          "notObject": "Esperado um objeto JSON",
+          "missingName": "Campo 'name' ausente ou inválido",
+          "missingConditions": "Campo 'conditions' ausente ou inválido"
+        }
+      },
+      "editJsonDialog": {
+        "title": "Editar \"{{name}}\" como JSON",
+        "description": "Edite o JSON do workflow. O workflow mantém o estado de ativação e a posição.",
+        "saveFailed": "Falha ao salvar o workflow",
+        "cancel": "Cancelar",
+        "saving": "Salvando...",
+        "save": "Salvar"
       },
       "toast": {
         "workflowDeleted": "Workflow excluído",
@@ -893,6 +668,7 @@
         "createdWorkflow": "Criado \"{{name}}\"",
         "copiedWorkflow": "Copiado \"{{name}}\" para {{instance}}",
         "importedWorkflow": "Importado \"{{name}}\"",
+        "updatedWorkflow": "\"{{name}}\" atualizado",
         "createFailed": "Falha ao criar",
         "reorderFailed": "Falha ao reordenar",
         "exportedTorrents": "Exportados {{count}} para CSV",
@@ -935,41 +711,55 @@
       "unregistered": "Não Registrado",
       "andMoreTorrents": "... e mais {{count}} torrents",
       "loadMore": "Carregar mais",
-      "exportCSV": "Exportar CSV"
+      "exportCSV": "Exportar CSV",
+      "saveWithoutPreview": "Salvar sem pré-visualização",
+      "previewFailed": "Falha na pré-visualização: {{error}}",
+      "skipPreviewHint": "A regra ainda age em todos os torrents correspondentes na próxima execução. Você pode salvar sem esperar pela pré-visualização."
     },
     "orphanScanOverview": {
-      "title": "Arquivos Órfãos",
+      "title": "Varredura de Órfãos",
       "noInstancesDescription": "Nenhuma instância configurada.",
       "tooltip": "Busca arquivos no disco que não fazem mais parte do qBittorrent.",
       "description": "Analise seus diretórios e ache arquivos não associados a torrents para limpar o disco.",
       "noLocalAccess": "Acesso Local Ausente",
       "noLocalAccessTooltip": "Você precisa ativar o 'Acesso ao Sistema de Arquivos Local' na configuração da instância.",
+      "remoteLimits": "A exclusão e a auto-limpeza ainda não funcionam em instâncias remotas. O qui também não consegue saber quando dois caminhos são o mesmo arquivo, então um arquivo acessível por um segundo caminho, como um bind mount, pode aparecer na lista mesmo que um torrent o utilize.",
       "on": "Ligado",
       "off": "Desligado",
-      "settingsSummary": "Tolerância {{grace}}m · Int. {{interval}}h · Max {{max}} arquivos",
+      "summaryGrace": "Tolerância {{grace}}m",
+      "summaryInterval": "Int. {{interval}}h",
+      "summaryMax": "Max {{max}} itens",
       "loading": "Carregando...",
-      "filesSummary": "{{count}} arquivos ({{size}})",
+      "itemsSummary_one": "{{count}} item ({{size}})",
+      "itemsSummary_other": "{{count}} itens ({{size}})",
       "cancel": "Cancelar",
       "autoCleanupEnabled": "Auto-limpeza ATIVA (≤{{max}} arquivos)",
       "autoCleanupDisabled": "Auto-limpeza INATIVA",
-      "pathsIgnored": " · {{count}} caminho ignorado",
-      "pathsIgnored_plural": " · {{count}} caminhos ignorados",
+      "autoCleanupRemote": "Sem auto-limpeza em instâncias remotas",
+      "pathsIgnored_one": " · {{count}} caminho ignorado",
+      "pathsIgnored_other": " · {{count}} caminhos ignorados",
       "scanNow": "Escanear Agora",
       "configure": "Configurar",
-      "orphanFilesFound": "{{count}} arquivo órfão",
-      "orphanFilesFound_plural": "{{count}} arquivos órfãos",
+      "orphanItemsFound_one": "{{count}} item órfão encontrado",
+      "orphanItemsFound_other": "{{count}} itens órfãos encontrados",
       "totalSize": "Tamanho total: {{size}}",
-      "scanTruncated": " (varredura incompleta, máximo de itens atingido)",
+      "scanTruncated": " (varredura incompleta, podem existir mais itens)",
       "viewPreview": "Ver Detalhes",
       "recentScans": "Escaneamentos Recentes",
-      "scannedPaths": "Caminhos Escaneados ({{total}})",
+      "scannedPaths": "Caminhos selecionados para verificação ({{total}})",
       "zeroOrphans": "0 órfãos",
       "deletedStats": "{{deleted}} apagados · {{size}}",
+      "deletedFiles_one": "{{count}} arquivo",
+      "deletedFiles_other": "{{count}} arquivos",
+      "deletedDirs_one": "{{count}} diretório",
+      "deletedDirs_other": "{{count}} diretórios",
+      "deletedSeparator": ", ",
       "partialFailure": "Falha parcial - verifique as atividades",
       "partialFailureExpand": "Falha parcial - veja detalhes",
       "copiedToClipboard": "Copiado para área de transferência",
-      "noScansYet": "Nenhum histórico.",
+      "noScansYet": "Nenhum escaneamento realizado ainda. Clique em \"Escanear Agora\" para encontrar órfãos.",
       "statusClean": "Limpo",
+      "statusPartial": "Verificação parcial",
       "statusStarting": "Iniciando...",
       "statusScanning": "Escaneando...",
       "statusReadyForReview": "Pronto",
@@ -990,21 +780,23 @@
     },
     "orphanScanPreview": {
       "title": "Pré-Visualizar Órfãos",
-      "description": "Revise arquivos listados como órfãos antes de excluí-los.",
-      "filesCount": "{{count}} arquivo · {{size}}",
-      "filesCount_plural": "{{count}} arquivos · {{size}}",
+      "description": "Revise os arquivos e diretórios que esta execução irá remover.",
+      "remoteDescription": "Revise os arquivos e diretórios encontrados nesta varredura.",
+      "itemsCount_one": "{{count}} item · {{size}}",
+      "itemsCount_other": "{{count}} itens · {{size}}",
       "truncated": " (truncado)",
       "path": "Caminho",
       "size": "Tamanho",
       "modified": "Modificado",
       "status": "Status",
       "loadingFiles": "Carregando...",
-      "noFiles": "Nada a exibir.",
+      "noItems": "Nada a exibir.",
       "showing": "Mostrando {{shown}} de {{total}}",
       "loadMore": "Carregar mais",
       "exportCSV": "Exportar CSV",
       "close": "Fechar",
-      "deleteFiles": "Excluir Arquivos",
+      "deleteItems": "Excluir",
+      "remoteDeleteUnavailable": "Esta varredura foi feita em uma instância remota, onde a exclusão ainda não é suportada. Exporte a lista para remover você mesmo os arquivos no servidor.",
       "statusLabels": {
         "pending": "Pendente",
         "deleted": "Excluído",
@@ -1013,11 +805,13 @@
       },
       "toast": {
         "deletionStarted": "Exclusão iniciada",
-        "deletionDescription": "Removendo os arquivos selecionados",
+        "deletionDescription": "Arquivos órfãos e diretórios abandonados estão sendo removidos",
         "deletionFailed": "Falha ao excluir",
-        "exportedFiles": "Exportado {{count}} p/ CSV",
+        "exportedItems_one": "Exportado {{count}} item p/ CSV",
+        "exportedItems_other": "Exportados {{count}} itens p/ CSV",
         "exportFailed": "Falha ao exportar"
-      }
+      },
+      "directory": "Diretório"
     },
     "orphanScanSettings": {
       "settingsTitle": "Configurações",
@@ -1034,25 +828,32 @@
       "every12Hours": "12 Horas",
       "every24Hours": "24 Horas",
       "gracePeriod": "Período de Tolerância",
-      "gracePeriodTooltip": "Arquivos modificados nos últimos X minutos serão ignorados.",
+      "gracePeriodTooltip": "Arquivos e diretórios modificados nesse período serão ignorados. Evita excluir arquivos que ainda estão sendo gravados ou processados.",
       "minutes": "minutos",
-      "maxFiles": "Máximo de Arquivos",
-      "maxFilesTooltip": "Limite de segurança para número máximo de arquivos processados.",
+      "maxItems": "Máximo de Itens",
+      "maxItemsTooltip": "Limite de segurança de quantas entradas, arquivos e diretórios juntos, uma varredura guarda para pré-visualização e exclusão. Arquivos têm prioridade sobre diretórios, então uma varredura no limite mantém os arquivos.",
       "perRun": "por execução",
       "previewSort": "Ordenação da Pré-Visualização",
-      "previewSortTooltip": "Controla a ordem. O limite máximo de arquivos é aplicado APÓS essa ordenação.",
+      "previewSortTooltip": "Controla a ordem. O limite Máximo de Itens é aplicado APÓS essa ordenação.",
       "sizeLargestFirst": "Maior tamanho",
       "directorySizeThenSize": "Diretório e depois tamanho",
       "autoCleanup": "Auto-Limpeza",
       "autoCleanupLabel": "Ativar Exclusão Automática",
-      "autoCleanupTooltip": "Quando ativo, escaneamentos automáticos excluirão os arquivos imediatamente.",
-      "autoDeleteWarningTitle": "A auto-exclusão removerá os arquivos permanentemente.",
-      "autoDeleteWarningBody": "Os arquivos marcados como órfãos não aparecerão para revisão. Se um diretório for monitorado e contiver outros arquivos <span class=\"font-medium\">que não pertençam aos torrents</span>, eles também serão excluídos.",
+      "autoCleanupTooltip": "Quando ativo, escaneamentos automáticos excluirão os órfãos imediatamente.",
+      "autoDeleteWarningTitle": "A auto-exclusão removerá arquivos e diretórios permanentemente.",
+      "autoDeleteWarningBody": "Os arquivos marcados como órfãos serão excluídos automaticamente, sem revisão manual, junto com os diretórios abandonados que eles esvaziam quando Excluir diretórios abandonados estiver ativo. Se o Scanner de Diretório estiver configurado no modo regular, todos os arquivos nos diretórios varridos <span class=\"font-medium\">que não corresponderem a nenhum torrent serão sinalizados como órfãos</span> e excluídos.",
       "autoDeleteWarningPaths": "Verifique seus caminhos na <span class=\"font-medium\">Lista de Ignorados</span>.",
-      "autoDeleteAcknowledge": "Estou ciente e aceito os riscos.",
+      "autoDeleteAcknowledge": "Revisei minhas configurações e entendo que arquivos e diretórios serão excluídos permanentemente",
       "maxFilesThreshold": "Limite Máximo para Auto-Limpeza",
-      "maxFilesThresholdTooltip": "Se encontrar mais arquivos que o definido aqui, o modo automático aborta a limpeza.",
+      "maxFilesThresholdTooltip": "Se encontrar mais arquivos que o definido aqui, o modo automático aborta a limpeza. Diretórios não contam para esse limite.",
       "files": "arquivos",
+      "scanScope": "Escopo da varredura",
+      "scanDefaultSavePathLabel": "Varrer o caminho de salvamento padrão",
+      "scanDefaultSavePathTooltip": "Por padrão, a varredura percorre apenas os diretórios para os quais algum torrent já aponta, portanto um arquivo solto diretamente no caminho de salvamento padrão nunca é encontrado. Ative esta opção para percorrer também o caminho de salvamento padrão da instância, incluindo subdiretórios que nenhum torrent usa.",
+      "scanCategoryPathsLabel": "Incluindo caminhos de categorias",
+      "scanCategoryPathsTooltip": "Percorrer também cada destino de categoria: o caminho definido pela categoria, ou caminho de salvamento padrão / nome da categoria quando ela o herda. Útil quando uma categoria aponta para fora do caminho de salvamento padrão.",
+      "deleteAbandonedDirsLabel": "Excluir diretórios abandonados",
+      "deleteAbandonedDirsTooltip": "Relatar diretórios que esta execução esvazia: os que não contêm arquivos em nenhuma profundidade e os em que todo arquivo abaixo é um órfão que a execução exclui. Raízes de varredura e destinos de categorias nunca são removidos, mesmo vazios.",
       "exclusions": "Exclusões",
       "ignorePaths": "Caminhos Ignorados",
       "ignorePathsTooltip": "Arquivos nesses caminhos jamais serão identificados como órfãos.",
@@ -1060,7 +861,7 @@
       "saving": "Salvando...",
       "saveChanges": "Salvar",
       "toast": {
-        "settingsSaved": "Configurações atualizadas",
+        "settingsSaved": "Varredura de órfãos atualizada",
         "updateFailed": "Erro ao atualizar",
         "updateFailedDescription": "Falha ao salvar as opções de varredura."
       }
@@ -1090,14 +891,14 @@
       "allTags": "Todas as tags",
       "allIndexers": "Todos os indexadores",
       "allCategoriesIncluded": "Todas as categorias serão correspondidas.",
-      "selectedCategories": "Apenas {{count}} categoria selecionada.",
-      "selectedCategories_plural": "Apenas {{count}} categorias selecionadas.",
+      "selectedCategories_one": "Apenas {{count}} categoria selecionada.",
+      "selectedCategories_other": "Apenas {{count}} categorias selecionadas.",
       "allTagsIncluded": "Todas as tags.",
-      "selectedTags": "Apenas {{count}} tag selecionada.",
-      "selectedTags_plural": "Apenas {{count}} tags selecionadas.",
+      "selectedTags_one": "Apenas {{count}} tag selecionada.",
+      "selectedTags_other": "Apenas {{count}} tags selecionadas.",
       "allIndexersSearched": "Todos os indexadores ativos serão utilizados.",
-      "selectedIndexers": "Apenas {{count}} indexador será utilizado.",
-      "selectedIndexers_plural": "Apenas {{count}} indexadores serão utilizados.",
+      "selectedIndexers_one": "Apenas {{count}} indexador será utilizado.",
+      "selectedIndexers_other": "Apenas {{count}} indexadores serão utilizados.",
       "skipCategoriesDescription": "Ignorar os torrents dessas categorias.",
       "skipTagsDescription": "Ignorar os torrents que contenham essas tags.",
       "none": "Nenhum",
@@ -1182,7 +983,6 @@
       "retentionTooltip": "Mantém registros recentes",
       "showSkipped": "Mostrar ignorados",
       "hideSkipped": "Ocultar ignorados",
-      "confirmEnableImmediately": "Ativará o reanúncio",
       "filterPlaceholder": "Filtrar por nome...",
       "failedToLoadActivity": "Erro ao buscar histórico",
       "checkConnectionToInstance": "A conexão falhou. Instância pode estar desligada.",
@@ -1319,7 +1119,7 @@
         "noOtherInstances": "Só há o qBittorrent atual ativo.",
         "savePathLabel": "Onde salvar o arquivo no destino",
         "savePathPlaceholder": "ex. /arquivos/novos",
-        "savePathHelp": "Diretório pai para o conteúdo do torrent. Deixe vazio para usar o padrão da categoria. Suporta modelos:",
+        "savePathHelp": "Diretório pai para o conteúdo do torrent. Deixe vazio para usar o padrão da categoria.",
         "categoryLabel": "Em que categoria classificar no destino",
         "selectTargetFirst": "Escolha a instância no menu acima primeiro",
         "loadingCategories": "Acessando qBittorrent destino...",
@@ -1351,7 +1151,9 @@
         "conditional": "Por Condições",
         "addScore": "Base de Pontos:",
         "addFieldMultiplier": "Campo P/ Multiplicar",
-        "addBonus": "Adicionar Bônus"
+        "addBonus": "Adicionar Bônus",
+        "notSupportedForSimpleSort": "Não suportado na ordenação simples",
+        "notSupportedForScoreMultiplier": "Não suportado nos multiplicadores de pontuação"
       },
       "conditionsLabel": "Condições (Quando a regra vai agir?)",
       "actions": {
@@ -1453,6 +1255,11 @@
         "aboutSkipping": "Sobre pular cross-seeds",
         "skipDescription": "Cancela a mudança se houver outros torrents no mesmo grupo de cross-seed que não atendam às condições da regra. Caso contrário, todos os cross-seeds serão movidos, mesmo os não correspondidos."
       },
+      "templateHelp": {
+        "absolutePath": "Deve ser um caminho absoluto. Os valores vão dentro dele, por exemplo",
+        "intro": "Suporta modelos Go.",
+        "learnMore": "Saiba mais"
+      },
       "freeSpace": {
         "title": "Fonte de espaço livre",
         "aria": "Monitoração do Espaço",
@@ -1466,7 +1273,7 @@
         "pathHelp": "Defina onde rastrear",
         "errors": {
           "unsupportedWindows": "Função não existe se instalada em Windows.",
-          "localAccessRequired": "Ligue Acesso Local do qBittorrent para varrer discos.",
+          "localAccessRequired": "A origem de espaço livre por caminho requer o \"Acesso ao Sistema de Arquivos Local\".",
           "pathRequired": "Você escolheu modo Manual, portanto escreva o caminho do HD."
         }
       },
@@ -1613,6 +1420,7 @@
           "noMatches": "Nenhuma correspondência",
           "exportedToInstance": "Exportar"
         },
+        "actionFallback": "Ação desconhecida ({{action}})",
         "summary": {
           "tagsChangedBoth": "Tags afetadas ({{added}} Inseridas | {{removed}} Excluídas)",
           "tagsAdded": "{{count}} Tag ganha",
@@ -1656,7 +1464,7 @@
         "switchedIntervalForFreeSpace": "Foi trocado seu Intervalo para ~5m, pois é o tempo de recarga que a libtorrent exige.",
         "pathSourceUnsupportedWindows": "Voltamos a opção de Verificação de HD para (Pegar pelo próprio qB). Windows é incompatível.",
         "switchFreeSpaceSourceDefault": "Ajustado ao original (qB).",
-        "enableLocalAccessOrDefault": "Nas Configurações Globais ligue o Acesso a Arquivos (Filesystem Local).",
+        "enableLocalAccessOrDefault": "Ative o Acesso ao Sistema de Arquivos Local nas configurações da instância, ou use \"Pegar pelo próprio qBittorrent\"",
         "enterPathOrDefault": "Você precisa de um caminho na caixa para usar esta opção.",
         "addScoreRule": "Adicione as regras da sua prioridade.",
         "fieldMultiplierInvalid": "O multiplicador de campo deve ser um número válido.",
@@ -1678,9 +1486,55 @@
       "trackerMatchInclude": "Vai Pegar (Incluir)",
       "trackerMatchExclude": "Ignorará Totalmente (Excluir)"
     },
-    "shareLimit": {
-      "global": "Do Servidor",
-      "unlimited": "Infinito"
+    "sections": {
+      "whenAdding": "Ao adicionar um torrent",
+      "savingManagement": "Gerenciamento de salvamento",
+      "excludedFileNames": "Nomes de arquivos excluídos",
+      "globalRateLimits": "Limites de velocidade globais",
+      "alternativeRateLimits": "Limites de velocidade alternativos",
+      "rateLimitsSettings": "Configurações dos limites de velocidade",
+      "autoAddTrackers": "Adicionar automaticamente estes trackers aos novos downloads",
+      "rssReader": "Leitor de RSS",
+      "rssAutoDownloader": "Baixador automático de torrents RSS",
+      "rssSmartEpisodeFilter": "Filtro inteligente de episódios RSS",
+      "qbittorrent": "qBittorrent",
+      "libtorrent": "libtorrent"
+    },
+    "fields": {
+      "excludedFileNamesEnabled": "Excluir nomes de arquivos",
+      "excludedFileNames": "Nomes de arquivos a excluir (um por linha)",
+      "scheduleFromHour": "Hora de início",
+      "scheduleFromMinute": "Minuto de início",
+      "scheduleToHour": "Hora de término",
+      "scheduleToMinute": "Minuto de término",
+      "limitLanPeers": "Aplicar limite de velocidade aos pares na LAN",
+      "slowTorrentDownloadRate": "Limite da taxa de download",
+      "slowTorrentUploadRate": "Limite da taxa de upload",
+      "slowTorrentInactiveTimer": "Temporizador de inatividade do torrent",
+      "maxSeedingTime": "Tempo máximo de semeadura",
+      "addTrackersEnabled": "Adicionar trackers aos novos downloads",
+      "addTrackers": "Trackers (um por linha)",
+      "interfaceAddress": "Endereço IP da interface",
+      "diskIoType": "Tipo de E/S de disco",
+      "diskIoTypeDefault": "Padrão",
+      "diskIoTypeMmap": "Arquivos mapeados em memória",
+      "diskIoTypePosix": "Compatível com POSIX",
+      "diskIoTypeSimplePreadPwrite": "pread/pwrite simples",
+      "diskIoTypePreadPwrite": "Pread/pwrite",
+      "diskIoReadMode": "Modo de leitura de E/S de disco",
+      "diskIoWriteMode": "Modo de gravação de E/S de disco",
+      "diskIoModeDisableOsCache": "Desativar o cache do sistema",
+      "diskIoModeEnableOsCache": "Ativar o cache do sistema",
+      "diskIoModeWriteThrough": "Gravação direta",
+      "optionValue": "Valor {{value}}"
+    },
+    "units": {
+      "minutes": "minutos"
+    },
+    "readOnlyNote": "O qui ainda não pode alterar esta configuração. Altere-a no qBittorrent.",
+    "toast": {
+      "saved": "Preferências salvas",
+      "saveFailed": "Falha ao salvar as preferências"
     },
     "transmission": {
       "loading": "Carregando preferências do daemon...",
@@ -1747,8 +1601,12 @@
         "portForwarding": "Usar redirecionamento de porta do roteador",
         "utp": "Habilitar uTP para comunicação com peers",
         "defaultTrackers": "Trackers públicos padrão",
-        "defaultTrackersHelp": "Trackers para usar em todos os torrents públicos. Adicione uma URL de backup na linha seguinte a uma URL primária; comece uma nova URL primária após uma linha em branco."
-      }
+        "defaultTrackersHelp": "Trackers para usar em todos os torrents públicos. Adicione uma URL de backup na linha seguinte a uma URL primária; comece uma nova URL primária após uma linha em branco.",
+        "pex": "PEX",
+        "dht": "DHT",
+        "lpd": "LPD"
+      },
+      "unsupported": "Requer qBittorrent"
     }
   },
   "backups": {
@@ -2000,5 +1858,26 @@
       "allBackupsDeleted": "Todos os backups excluídos",
       "failedToDeleteBackups": "Falha ao excluir backups"
     }
+  },
+  "sharing": {
+    "batchTitle": "Compartilhar instâncias",
+    "batchDescription": "Selecione as instâncias e os usuários que podem acessá-las.",
+    "instanceOwner": "Proprietário da instância",
+    "selectInstances": "Selecionar instâncias",
+    "selectUsers": "Selecionar usuários",
+    "shared": "Instâncias compartilhadas",
+    "shareFailed": "Falha ao compartilhar instâncias",
+    "cancel": "Cancelar",
+    "badge": "Compartilhada",
+    "manage": "Gerenciar compartilhamento",
+    "leave": "Sair da instância compartilhada",
+    "title": "Compartilhar instância",
+    "description": "Escolha os usuários que podem acessar esta instância.",
+    "selectUser": "Selecionar um usuário",
+    "share": "Compartilhar",
+    "remove": "Remover",
+    "sharedWith": "Compartilhada com",
+    "empty": "Esta instância não é compartilhada com ninguém.",
+    "left": "Você saiu da instância compartilhada."
   }
 }

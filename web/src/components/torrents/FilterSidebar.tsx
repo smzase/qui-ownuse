@@ -33,7 +33,7 @@ import { TruncatedText } from "@/components/ui/truncated-text"
 
 import { useDebounce } from "@/hooks/useDebounce"
 import { useInstanceCapabilities } from "@/hooks/useInstanceCapabilities"
-import { useInstancePreferences } from "@/hooks/useInstancePreferences"
+import { useSubcategoriesEnabled } from "@/hooks/usePreferenceValues"
 import { useInstances } from "@/hooks/useInstances"
 import { useItemPartition } from "@/hooks/useItemPartition"
 import { usePersistedAccordion } from "@/hooks/usePersistedAccordion"
@@ -71,6 +71,7 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { CategoryTree } from "./CategoryTree"
+import { FilterClearButton } from "./FilterClearButton"
 import { FilterViewsSection } from "./FilterViewsSection"
 import {
   CreateCategoryDialog,
@@ -219,14 +220,13 @@ const FilterSidebarComponent = ({
   )
   const supportsTrackerHealth = supportsTrackerHealthProp ?? capabilities?.supportsTrackerHealth ?? false
   const supportsTrackerEditing = !isReadOnly && (capabilities?.supportsTrackerEditing ?? false)
-  const supportsSubcategories = isConcreteInstanceScope? (capabilities?.supportsSubcategories ?? false): Boolean(useSubcategories)
-  const subcategoriesAlwaysEnabled = capabilities?.subcategoriesAlwaysEnabled ?? false
-  const { preferences } = useInstancePreferences(
+  const instanceSubcategoriesEnabled = useSubcategoriesEnabled(
     instanceId,
+    capabilities,
+    useSubcategories,
     { fetchIfMissing: false, enabled: isConcreteInstanceScope && isInstanceActive }
   )
-  const preferenceUseSubcategories = preferences?.use_subcategories
-  const subcategoriesEnabled = isConcreteInstanceScope? Boolean(supportsSubcategories && (subcategoriesAlwaysEnabled || (preferenceUseSubcategories ?? useSubcategories ?? false))): Boolean(useSubcategories)
+  const subcategoriesEnabled = isConcreteInstanceScope? instanceSubcategoriesEnabled: Boolean(useSubcategories)
 
   // Match the preference to the layout this sidebar controls.
   const { viewMode, cycleViewMode } = usePersistedCompactViewState(isMobile ? "mobile" : "desktop")
@@ -1723,7 +1723,7 @@ const FilterSidebarComponent = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Virtualizers are stable refs, only re-measure on viewMode change
   }, [viewMode])
 
-  const clearFilters = () => {
+  const clearSidebarFilters = () => {
     applyFilterChange({
       status: [],
       excludeStatus: [],
@@ -1733,10 +1733,8 @@ const FilterSidebarComponent = ({
       excludeTags: [],
       trackers: [],
       excludeTrackers: [],
-      expr: undefined, // Clear custom expression filters
+      expr: undefined,
     })
-    // Optionally reset accordion state to defaults
-    // setExpandedItems(['status', 'categories', 'tags'])
   }
 
   const clearStatusFilter = () => {
@@ -1911,14 +1909,11 @@ const FilterSidebarComponent = ({
                 <span className="text-xs text-muted-foreground animate-pulse">{t("filterSidebar.loading")}</span>
               )}
             </div>
-            {hasActiveFilters && (
-              <button
-                onClick={clearFilters}
-                className="text-xs text-muted-foreground hover:text-foreground shrink-0"
-              >
-                {t("filterSidebar.clearAll")}
-              </button>
-            )}
+            <FilterClearButton
+              instanceId={instanceId}
+              hasSidebarFilters={hasActiveFilters}
+              onClearSidebar={clearSidebarFilters}
+            />
           </div>
 
           {/* View Mode Toggle - only show on mobile */}

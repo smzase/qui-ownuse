@@ -15,7 +15,7 @@
     }
   },
   "managementBar": {
-    "ariaLabel": "已选择 {{count}} 个种子 - 可进行批量操作",
+    "ariaLabel_other": "已选择 {{count}} 个种子 - 可进行批量操作",
     "resume": "继续",
     "pause": "暂停",
     "forceRecheck": "强制重新校验",
@@ -484,7 +484,6 @@
     "renameFolder": "重命名文件夹",
     "download": "下载",
     "mediaInfo": "媒体信息",
-    "toggle": "切换",
     "selectFileForDownload": "选择文件以下载",
     "skipFileDownload": "跳过文件下载",
     "selectAllFilesIn": "选择 {{name}} 中的所有文件",
@@ -505,6 +504,31 @@
     "toast": {
       "copied": "{{label}} 已复制到剪贴板",
       "copyFailed": "复制到剪贴板失败"
+    }
+  },
+  "discScan": {
+    "action": "BDInfo",
+    "actionActive": "BDInfo 扫描进行中",
+    "actionReady": "BDInfo 报告已就绪",
+    "actionFailed": "BDInfo 扫描失败",
+    "quickSummary": "快速摘要",
+    "forum": "论坛",
+    "copyQuickSummary": "复制快速摘要",
+    "copyForum": "复制论坛代码块",
+    "rescan": "重新扫描",
+    "cancel": "取消扫描",
+    "retry": "重试",
+    "starting": "正在启动扫描…",
+    "queued": "排队中，位置 {{position}}",
+    "scanning": "正在扫描 {{processed}} / {{total}}",
+    "scanningUnknown": "正在扫描…",
+    "failed": "扫描失败",
+    "canceled": "扫描已取消",
+    "toast": {
+      "copied": "{{label}}已复制到剪贴板",
+      "copyFailed": "复制到剪贴板失败",
+      "completed": "BDInfo 报告已就绪",
+      "failed": "BDInfo 扫描失败：{{error}}"
     }
   },
   "categoryTree": {
@@ -607,22 +631,22 @@
     "deleteEmptyCategories": {
       "title": "移除空分类",
       "noEmpty": "没有可移除的空分类。",
-      "confirm": "确定要移除 {{count}} 个空分类吗？此操作无法撤销。",
+      "confirm_other": "确定要移除 {{count}} 个空分类吗？此操作无法撤销。",
       "cancel": "取消",
-      "remove": "移除 {{count}} 个分类",
+      "remove_other": "移除 {{count}} 个分类",
       "toast": {
-        "success": "已移除 {{count}} 个空分类",
+        "success_other": "已移除 {{count}} 个空分类",
         "error": "移除空分类失败"
       }
     },
     "deleteUnusedTags": {
       "title": "删除未使用的标签",
       "noUnused": "没有可删除的未使用标签。",
-      "confirm": "确定要删除 {{count}} 个未使用的标签吗？此操作无法撤销。",
+      "confirm_other": "确定要删除 {{count}} 个未使用的标签吗？此操作无法撤销。",
       "cancel": "取消",
-      "delete": "删除 {{count}} 个标签",
+      "delete_other": "删除 {{count}} 个标签",
       "toast": {
-        "success": "已删除 {{count}} 个未使用的标签",
+        "success_other": "已删除 {{count}} 个未使用的标签",
         "error": "删除未使用的标签失败"
       }
     }
@@ -648,7 +672,7 @@
     "contentFilteringInProgress": "内容筛选进行中",
     "analyzingContent": "正在分析现有内容...",
     "smartFilteringActive": "智能筛选已启用",
-    "indexersFiltered": "{{count}} 个索引器已筛选",
+    "indexersFiltered_other": "{{count}} 个索引器已筛选",
     "contentFilteringDescription": "正在检查您现有的种子以查找重复项并排除冗余的 Tracker。这有助于避免多次下载相同内容。",
     "excludedDescription": "您已从这些 Tracker 做种此版本，因此它们已被排除在搜索之外。",
     "noContentDuplicates": "内容筛选完成。在您启用的 Tracker 上未发现重复内容。",
@@ -740,6 +764,26 @@
     "setConditions": "设置条件以筛选此列",
     "operation": "操作",
     "selectOperation": "选择操作",
+    "operations": {
+      "equalTo": "等于",
+      "notEqualTo": "不等于",
+      "greaterThan": "大于",
+      "greaterThanOrEqual": "大于或等于",
+      "lessThan": "小于",
+      "lessThanOrEqual": "小于或等于",
+      "between": "介于",
+      "equals": "等于",
+      "notEquals": "不等于",
+      "contains": "包含",
+      "doesNotContain": "不包含",
+      "startsWith": "开头为",
+      "endsWith": "结尾为",
+      "on": "当天",
+      "after": "晚于",
+      "before": "早于",
+      "is": "是",
+      "isNot": "不是"
+    },
     "value": "值",
     "from": "从",
     "to": "到",
@@ -808,7 +852,10 @@
       }
     },
     "title": "筛选器",
-    "clearAll": "全部清除",
+    "clearOptions": "筛选清除选项",
+    "clearSidebarFilters": "清除侧边栏筛选",
+    "clearColumnFilters": "清除列筛选",
+    "clearFiltersAndSearch": "清除筛选和搜索",
     "loading": "加载中...",
     "customFilter": "自定义筛选器",
     "customFilterHelp": "活跃的自定义表达式筛选器（例如辅种结果）",
@@ -828,18 +875,15 @@
     "uncategorized": "未分类",
     "tags": "标签",
     "trackers": "Tracker",
-    "customExpression": "自定义表达式",
     "untagged": "无标签",
     "noTracker": "无 Tracker",
     "hideEmpty": "隐藏空项",
     "showEmpty": "显示空项",
-    "showHidden": "显示 {{count}} 个隐藏项",
     "searchCategories": "搜索分类",
     "searchTags": "搜索标签",
     "searchTrackers": "搜索 Tracker",
     "noCategoriesFound": "未找到匹配「{{query}}」的分类",
     "noTagsFound": "未找到匹配「{{query}}」的标签",
-    "hiddenMatchSearch": "{{count}} 个隐藏项匹配搜索",
     "createTag": "创建标签",
     "createCategory": "创建分类",
     "createSubcategory": "创建子分类",
@@ -918,13 +962,11 @@
     "zoomIn": "放大",
     "zoomOut": "缩小",
     "zoomReset": "重置缩放",
-    "zoomLevel": "{{level}}%",
     "connectionConnectable": "可连接",
     "connectionUnknown": "连接状态未知",
     "connectionPort": "端口：{{port}}",
     "connectionAriaLabel": "qBittorrent 连接状态：{{status}}",
     "connectionAriaLabelUnknown": "qBittorrent 连接状态未知",
-    "external": "外部",
     "externalIpAddresses": "外部 IP 地址",
     "streamStatus": {
       "crossInstance": {
@@ -955,7 +997,8 @@
         "message": "在 SSE 连接就绪前，每 {{seconds}} 秒轮询一次。",
         "secondary": "每 {{seconds}} 秒轮询一次"
       }
-    }
+    },
+    "dualStack": "IPv4 & IPv6"
   },
   "detailsPanel": {
     "tabs": {
@@ -978,10 +1021,8 @@
       "trackerUpdated": "Tracker URL 更新成功",
       "trackerUpdateFailed": "更新 Tracker 失败",
       "fileRenamed": "文件重命名成功",
-      "fileRenameFailed": "重命名文件失败",
       "folderRenamed": "文件夹重命名成功",
-      "folderRenameFailed": "重命名文件夹失败",
-      "deletedTorrents": "已删除 {{count}} 个种子",
+      "deletedTorrents_other": "已删除 {{count}} 个种子",
       "deletedTorrent": "已删除种子：{{name}}",
       "deleteFailed": "删除失败：{{error}}"
     },
@@ -990,10 +1031,6 @@
       "description": "输入节点地址（IP:端口），每行一个或用逗号分隔",
       "label": "节点",
       "placeholder": "192.168.1.100:51413\n10.0.0.5:6881\ntracker.example.com:8080\n[2001:db8::1]:6881"
-    },
-    "banPeer": {
-      "title": "封禁节点",
-      "description": "确定要封禁 {{address}} 吗？"
     },
     "banPeerPermanent": {
       "title": "永久封禁节点",
@@ -1118,24 +1155,17 @@
     "network": "网络",
     "seeds": "做种",
     "peers": "节点",
-    "downSpeed": "下载速度",
-    "upSpeed": "上传速度",
     "downLimit": "下载限制",
     "upLimit": "上传限制",
-    "connections": "连接数",
     "time": "时间",
     "addedOn": "添加时间",
     "completedOn": "完成时间",
-    "lastActivity": "最后活动",
-    "lastSeen": "最后出现",
-    "eta": "预计剩余时间",
     "timeActive": "活跃时间",
     "seedingTime": "做种时间",
     "limits": "限制",
     "ratioLimit": "分享率限制",
     "seedingTimeLimit": "做种时间限制",
     "inactiveSeedingLimit": "不活跃做种限制",
-    "info": "信息",
     "pieceSize": "分块大小",
     "pieces": "分块数",
     "createdOn": "创建时间",
@@ -1144,7 +1174,6 @@
   "trackersTable": {
     "status": "状态",
     "tracker": "Tracker",
-    "tier": "层级",
     "seeds": "做种",
     "leeches": "下载",
     "downloaded": "已完成",
@@ -1163,7 +1192,6 @@
     "upSpeed": "上传速度",
     "downloaded": "已下载",
     "uploaded": "已上传",
-    "relevance": "相关性",
     "copyIpAddress": "复制地址",
     "banPeer": "封禁节点",
     "noPeersConnected": "无已连接节点",
@@ -1185,7 +1213,7 @@
     "url": "URL",
     "noHttpSources": "无 HTTP 来源",
     "searchUrls": "搜索 URL...",
-    "httpSources": "{{count}} 个 HTTP 来源",
+    "httpSources_other": "{{count}} 个 HTTP 来源",
     "filteredCount": "{{filtered}}/{{total}}",
     "copyUrl": "复制 URL",
     "toast": {
@@ -1204,7 +1232,7 @@
     "expandAll": "全部展开",
     "collapseAll": "全部折叠",
     "searchFiles": "搜索文件...",
-    "fileCount": "{{count}} 个文件",
+    "fileCount_other": "{{count}} 个文件",
     "filteredCount": "{{filtered}}/{{total}}",
     "noFiles": "无文件",
     "headers": {
@@ -1422,7 +1450,7 @@
       "title": "搜索种子",
       "description": "按名称、分类或标签搜索。支持 glob 模式，如 *.mkv 或 *1080p*。",
       "placeholder": "搜索种子...",
-      "globExamples": "*.mkv, *1080p*, S??E??",
+      "globExamples": "*.mkv, *1080p*, *S[0-9][0-9]E[0-9][0-9]*",
       "autoSearches": "输入后自动搜索"
     },
     "shareLimit": {
@@ -1456,6 +1484,10 @@
     "descending": "降序",
     "sortDirection": "{{direction}}排序",
     "toggleColumns": "切换列显示",
+    "stretchMode": "拉伸名称列以填满表格",
+    "scrollMode": "自行设置名称列宽度并横向滚动",
+    "stretchInactive": "已暂停，因为可见列已填满表格",
+    "reorderColumn": "拖动以重新排序 {{column}}",
     "tableAriaLabel": "种子表格"
   },
   "tableColumns": {
@@ -1472,7 +1504,6 @@
     "size": "大小",
     "totalSize": "总大小",
     "progress": "进度",
-    "state": "状态",
     "seeds": "做种",
     "peers": "节点",
     "downSpeed": "下载速度",
@@ -1515,6 +1546,7 @@
   "stateLabels": {
     "downloading": "下载中",
     "metaDL": "获取元数据中",
+    "forcedMetaDL": "(强制) 获取元数据中",
     "allocating": "分配空间中",
     "stalledDL": "停滞",
     "queuedDL": "排队中",
@@ -1532,12 +1564,23 @@
     "error": "错误",
     "missingFiles": "文件丢失",
     "checkingResumeData": "校验恢复数据中",
-    "moving": "移动中"
+    "moving": "移动中",
+    "unknown": "未知"
   },
+  "stateLabelFallback": "无法识别",
   "sort": {
     "label": "排序",
     "ascending": "升序",
-    "descending": "降序"
+    "descending": "降序",
+    "options": {
+      "addedOn": "最近添加",
+      "downloadLimit": "下载限制",
+      "uploadLimit": "上传限制",
+      "sessionDownloaded": "已下载（本次会话）",
+      "sessionUploaded": "已上传（本次会话）",
+      "lastSeenComplete": "最近完成",
+      "reannounceIn": "重新汇报倒计时"
+    }
   },
   "details": {
     "failedToUpdatePriorities": "更新文件优先级失败",
@@ -1571,6 +1614,39 @@
     "applyFailed": "辅种失败：{{message}}",
     "addOptionTitle": "作为辅种添加",
     "addOptionDescription": "将此种子与现有种子匹配，而不是重新下载。",
-    "addOptionButton": "手动匹配"
+    "addOptionButton": "手动匹配",
+    "pack": {
+      "description": "选择一个种子进行手动匹配，或选择多个单集来组装此整季包。",
+      "targetLabel": "目标种子",
+      "checking": "正在检查所选单集……",
+      "checkFailed": "无法检查此选择。",
+      "coverage": "已匹配 {{matched}}/{{total}} 集 · 覆盖率 {{percent}}%",
+      "missing": "缺少 {{size}}",
+      "recheck": "整季包将以暂停状态添加并重新校验。当校验结果达到已链接字节的比例时，将恢复下载。",
+      "reviewRules": "前往 Cross-seed → 规则查看保护设置",
+      "proposalLimit": "此整季包包含 {{count}} 集。候选列表最多显示 {{limit}} 个种子。请通过搜索选择缺少的目标。",
+      "dropped": "整季包已添加。已排除的目标：{{names}}",
+      "rejected": "{{name}}：{{reason}}",
+      "reasons": {
+        "no_filesystem_access": "此实例需要本地文件系统访问权限才能组装整季包。",
+        "no_link_mode": "请在此实例上启用硬链接或 reflink 模式，以选择多个目标。",
+        "no_base_directory": "请为此实例配置链接基础目录。",
+        "no_episode_files": "此整季包中未找到可播放的单集文件。",
+        "target_not_found": "此实例中未找到目标种子。",
+        "incomplete": "目标种子尚未下载完成。",
+        "no_episode_identity": "无法解析集数。",
+        "file_list_unavailable": "无法获取目标种子的文件列表。",
+        "episode_file_invalid": "目标种子必须仅包含一个与所选单集标识相符的可播放文件。",
+        "size_mismatch": "本地文件大小与整季包中的文件大小不符。",
+        "release_mismatch": "发布版本与整季包不匹配。",
+        "local_file_unavailable": "本地文件不存在或不可用。",
+        "not_paired": "此目标未提供整季包中的单集，或其他所选目标已覆盖该单集。",
+        "layout_mismatch": "无法使用所选文件创建安全的链接目录。",
+        "unsafe_piece_boundary": "分片边界保护已阻止添加此合集，因为所选文件与缺失文件共享一个数据块。下载该数据块可能会通过硬链接更改原始文件。手动组装不受覆盖率阈值限制。",
+        "already_exists": "此种子已存在。",
+        "link_failed": "创建链接失败。",
+        "add_failed": "添加种子失败。"
+      }
+    }
   }
 }
