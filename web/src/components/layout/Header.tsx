@@ -6,6 +6,7 @@
 import { InstancePreferencesDialog } from "@/components/instances/preferences/InstancePreferencesDialog"
 import { UnifiedScopeDropdownSection } from "@/components/layout/UnifiedScopeDropdownSection"
 import { UserSwitcher } from "@/components/layout/UserSwitcher"
+import { TorrentRefreshButton } from "@/components/layout/TorrentRefreshButton"
 import { SpreadsheetRibbonTabs } from "@/components/spreadsheet/SpreadsheetRibbonTabs"
 import { AddTorrentDialog } from "@/components/torrents/AddTorrentDialog"
 import { TorrentCreationTasks } from "@/components/torrents/TorrentCreationTasks"
@@ -135,7 +136,7 @@ export function Header({
   const { logout } = useAuth()
   const navigate = useNavigate()
   const routeSearch = useSearch({ strict: false }) as { q?: string; modal?: string;[key: string]: unknown }
-  const { state: layoutRouteState } = useLayoutRoute()
+  const { state: layoutRouteState, refreshTorrentList } = useLayoutRoute()
   const spreadsheetDisguise = useSpreadsheetDisguise()
 
   // Get selection state from context
@@ -745,7 +746,14 @@ export function Header({
       )}
 
 
-      <div className={cn("grid grid-cols-[auto_auto_auto] items-center gap-1 transition-all duration-300 ease-out sm:order-4 lg:order-none", smInnerHeight)}>
+      <div className={cn("grid grid-flow-col auto-cols-auto items-center gap-1 transition-all duration-300 ease-out sm:order-4 lg:order-none", smInnerHeight)}>
+        {shouldShowInstanceControls && (
+          <TorrentRefreshButton
+            key={`${selectedInstanceId}:${isAllInstancesRoute ? effectiveUnifiedInstanceIds.join(",") : ""}`}
+            instanceIds={isAllInstancesRoute ? effectiveUnifiedInstanceIds : [selectedInstanceId!]}
+            onRefresh={refreshTorrentList}
+          />
+        )}
         <ThemeToggle />
         <UserSwitcher />
         <div className={cn(

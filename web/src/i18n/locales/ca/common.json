@@ -37,6 +37,9 @@
     "showItem": "Mostra {{item}}"
   },
   "header": {
+    "forceRefresh": "Força l’actualització",
+    "forceRefreshSuccess": "Llista de torrents actualitzada",
+    "forceRefreshError": "No s’ha pogut actualitzar la llista de torrents. Comprova la connexió amb la instància i torna-ho a provar.",
     "currentInstance": "Instància actual: {{name}}. Fes clic per canviar d'instància.",
     "connected": "Connectat",
     "disconnected": "Desconnectat",

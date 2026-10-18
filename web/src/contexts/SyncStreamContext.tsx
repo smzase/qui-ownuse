@@ -111,6 +111,7 @@ export interface StreamState {
 }
 
 interface SyncStreamContextValue {
+  resetInstanceStreams: (instanceIds: number[]) => void
   connect: (
     params: StreamParams,
     listener: StreamListener,
@@ -1156,6 +1157,28 @@ export function SyncStreamProvider({ children }: { children: React.ReactNode }) 
     }
   }, [])
 
+  const resetInstanceStreams = useCallback((instanceIds: number[]) => {
+    const ids = new Set(instanceIds)
+    // Close first: queued frames from the old source must not restore its baseline.
+    closeConnection()
+    Object.values(streamsRef.current).forEach(entry => {
+      if (!ids.has(entry.params.instanceId) && !entry.params.instanceIds?.some(id => ids.has(id))) {
+        return
+      }
+      clearDataWatchdog(entry)
+      clearHandoffState(entry)
+      entry.snapshot = undefined
+      entry.version = undefined
+      entry.lastMeta = undefined
+      entry.connected = false
+      entry.initialized = false
+      entry.dataStalled = false
+      entry.error = null
+      notifyStateSubscribers(entry.key)
+    })
+    queueConnectionUpdate({ preserveState: true, resetRetry: true, force: true })
+  }, [clearDataWatchdog, clearHandoffState, closeConnection, notifyStateSubscribers, queueConnectionUpdate])
+
   const contextValue = useMemo<SyncStreamContextValue>(
     () => ({
       connect,
@@ -1163,8 +1186,9 @@ export function SyncStreamProvider({ children }: { children: React.ReactNode }) 
       subscribe: subscribeToState,
       registerActivity,
       subscribeActivity,
+      resetInstanceStreams,
     }),
-    [connect, getState, subscribeToState, registerActivity, subscribeActivity]
+    [connect, getState, subscribeToState, registerActivity, subscribeActivity, resetInstanceStreams]
   )
 
   useEffect(() => {

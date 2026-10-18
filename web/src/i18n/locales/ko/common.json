@@ -48,6 +48,9 @@
   "expand": "펼치기",
   "collapse": "접기",
   "header": {
+    "forceRefresh": "강제 새로고침",
+    "forceRefreshSuccess": "토렌트 목록을 새로고침했습니다",
+    "forceRefreshError": "토렌트 목록을 새로고침할 수 없습니다. 인스턴스 연결을 확인하고 다시 시도하세요.",
     "showColumnFilters": "열 필터 표시",
     "hideColumnFilters": "열 필터 숨기기",
     "currentInstance": "현재 인스턴스: {{name}}. 클릭하여 인스턴스를 전환합니다.",

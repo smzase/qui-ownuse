@@ -2177,6 +2177,28 @@ paths:
           description: Torrent added successfully
 
 
+  /api/instances/{instanceID}/torrents/refresh:
+    post:
+      tags:
+        - Torrents
+      summary: Force a full torrent list refresh
+      description: Discard the instance's incremental sync cache and wait for a fresh snapshot from qBittorrent or Transmission. Requires access to the instance and does not modify torrents.
+      parameters:
+        - $ref: '#/components/parameters/instanceID'
+      responses:
+        '204':
+          description: The instance's torrent cache was refreshed
+        '400':
+          description: Invalid instance ID
+        '401':
+          description: Invalid API key
+        '403':
+          description: Session authentication or required request header missing
+        '404':
+          description: Instance not found or not accessible
+        '502':
+          description: Failed to refresh data from the instance
+
   /api/instances/{instanceID}/torrents/check-duplicates:
     post:
       tags:

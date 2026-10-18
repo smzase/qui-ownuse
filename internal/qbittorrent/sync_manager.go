@@ -1374,6 +1374,18 @@ func (sm *SyncManager) GetErrorStore() *models.InstanceErrorStore {
 }
 
 // GetTorrents gets torrents with the specified filter options
+// RefreshTorrents discards the incremental sync baseline and waits for fresh data.
+func (sm *SyncManager) RefreshTorrents(ctx context.Context, instanceID int) error {
+	// A normal Sync keeps its RID and cannot repair an incomplete cached row.
+	// Reuse the pool's reconnect path so both clients start with a full snapshot.
+	sm.clientPool.RemoveClient(instanceID)
+	_, syncManager, err := sm.getClientAndSyncManager(ctx, instanceID)
+	if err != nil {
+		return err
+	}
+	return syncManager.Sync(ctx)
+}
+
 func (sm *SyncManager) GetTorrents(ctx context.Context, instanceID int, filter qbt.TorrentFilterOptions) ([]qbt.Torrent, error) {
 	_, syncManager, _, err := sm.readMainData(ctx, instanceID, mainDataRead)
 	if err != nil {

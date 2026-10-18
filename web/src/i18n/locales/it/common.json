@@ -48,6 +48,9 @@
   "expand": "Espandi",
   "collapse": "Comprimi",
   "header": {
+    "forceRefresh": "Forza aggiornamento",
+    "forceRefreshSuccess": "Elenco torrent aggiornato",
+    "forceRefreshError": "Impossibile aggiornare l’elenco dei torrent. Controlla la connessione all’istanza e riprova.",
     "showColumnFilters": "Mostra filtri colonna",
     "hideColumnFilters": "Nascondi filtri colonna",
     "currentInstance": "Istanza attuale: {{name}}. Clicca per cambiare istanza.",

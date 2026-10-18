@@ -48,6 +48,9 @@
   "expand": "Rozbalit",
   "collapse": "Sbalit",
   "header": {
+    "forceRefresh": "Vynutit obnovení",
+    "forceRefreshSuccess": "Seznam torrentů obnoven",
+    "forceRefreshError": "Seznam torrentů se nepodařilo obnovit. Zkontrolujte připojení k instanci a zkuste to znovu.",
     "showColumnFilters": "Zobrazit filtry sloupců",
     "hideColumnFilters": "Skrýt filtry sloupců",
     "currentInstance": "Aktuální instance: {{name}}. Klikněte pro přepnutí instance.",

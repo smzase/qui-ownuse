@@ -971,6 +971,10 @@ class ApiClient {
   }
 
   // Torrent endpoints
+  async refreshTorrents(instanceId: number, signal?: AbortSignal): Promise<void> {
+    return this.request<void>(`/instances/${instanceId}/torrents/refresh`, { method: "POST", signal })
+  }
+
   async getTorrents(
     instanceId: number,
     params: {

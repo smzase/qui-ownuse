@@ -48,6 +48,9 @@
   "expand": "Erweitern",
   "collapse": "Reduzieren",
   "header": {
+    "forceRefresh": "Aktualisierung erzwingen",
+    "forceRefreshSuccess": "Torrent-Liste aktualisiert",
+    "forceRefreshError": "Die Torrent-Liste konnte nicht aktualisiert werden. Prüfe die Verbindung zur Instanz und versuche es erneut.",
     "showColumnFilters": "Spaltenfilter anzeigen",
     "hideColumnFilters": "Spaltenfilter ausblenden",
     "currentInstance": "Aktuelle Instanz: {{name}}. Zum Wechseln der Instanz klicken.",

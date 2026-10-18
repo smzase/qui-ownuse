@@ -46,6 +46,9 @@
     "showItem": "Show {{item}}"
   },
   "header": {
+    "forceRefresh": "Force refresh",
+    "forceRefreshSuccess": "Torrent list refreshed",
+    "forceRefreshError": "Could not refresh the torrent list. Check the instance connection and try again.",
     "currentInstance": "Current instance: {{name}}. Click to switch instances.",
     "connected": "Connected",
     "disconnected": "Disconnected",

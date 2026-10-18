@@ -1480,6 +1480,58 @@ describe("SyncStreamContext", () => {
       expect(MockEventSource.instances).toHaveLength(1)
     })
 
+    it.each([false, true])("drops old baselines on forced refresh before remount, cross=%s", async cross => {
+      const params = makeParams(cross ? { instanceId: 0, instanceIds: [1, 2] } : {})
+      const key = createStreamKey(params)
+      const messages: TorrentStreamPayload[] = []
+      let refresh = () => {}
+      function Subscriber() {
+        useSyncStream(params, { onMessage: payload => messages.push(payload) })
+        return null
+      }
+      function Root() {
+        const { resetInstanceStreams } = useSyncStreamManager()
+        const [revision, setRevision] = useState(0)
+        refresh = () => {
+          resetInstanceStreams([1])
+          setRevision(value => value + 1)
+        }
+        return <Subscriber key={revision} />
+      }
+      render(<TestProviders><Root /></TestProviders>)
+      flushConnectionQueue()
+      const source = MockEventSource.instances[0]
+      const field = cross ? "cross_instance_torrents" : "torrents"
+      const row = { hash: "a", name: "Old fixture", ...(cross ? { instance_id: 1 } : {}) }
+      act(() => {
+        source.emitOpen()
+        source.emit("init", {
+          type: "init", version: { major: 1, minor: 1 }, meta: { streamKey: key },
+          data: { [field]: [row], total: 1 },
+        })
+      })
+      expect(messages).toHaveLength(1)
+      await act(async () => refresh())
+      expect(source.closed).toBe(true)
+      expect(messages).toHaveLength(1)
+      flushConnectionQueue()
+      const replacement = MockEventSource.instances.at(-1)!
+      expect(replacement).not.toBe(source)
+      act(() => {
+        source.emit("init", {
+          type: "init", version: { major: 1, minor: 1 }, meta: { streamKey: key },
+          data: { [field]: [row], total: 1 },
+        })
+        replacement.emitOpen()
+        replacement.emit("init", {
+          type: "init", version: { major: 2, minor: 1 }, meta: { streamKey: key },
+          data: { [field]: [{ ...row, name: "New fixture" }], total: 1 },
+        })
+      })
+      expect(messages).toHaveLength(2)
+      expect(messages.at(-1)?.data).toMatchObject({ [field]: [{ name: "New fixture" }] })
+    })
+
     it("opens distinct EventSources for differing params", () => {
       function TwoSubscribers() {
         useSyncStream(makeParams({ page: 1 }), {})

@@ -18,6 +18,8 @@ const DEFAULT_STATE: LayoutRouteState = {
 
 interface LayoutRouteContextValue {
   state: LayoutRouteState
+  torrentListRevision: number
+  refreshTorrentList: () => void
   setLayoutRouteState: (next: LayoutRouteState) => void
   resetLayoutRouteState: () => void
 }
@@ -26,6 +28,10 @@ const LayoutRouteContext = createContext<LayoutRouteContextValue | undefined>(un
 
 export function LayoutRouteProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LayoutRouteState>(DEFAULT_STATE)
+  const [torrentListRevision, setTorrentListRevision] = useState(0)
+  const refreshTorrentList = useCallback(() => {
+    setTorrentListRevision(revision => revision + 1)
+  }, [])
 
   const setLayoutRouteState = useCallback((next: LayoutRouteState) => {
     setState(next)
@@ -36,7 +42,7 @@ export function LayoutRouteProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <LayoutRouteContext.Provider value={{ state, setLayoutRouteState, resetLayoutRouteState }}>
+    <LayoutRouteContext.Provider value={{ state, setLayoutRouteState, resetLayoutRouteState, torrentListRevision, refreshTorrentList }}>
       {children}
     </LayoutRouteContext.Provider>
   )

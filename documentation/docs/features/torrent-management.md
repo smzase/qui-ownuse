@@ -9,6 +9,12 @@ description: Tags, categories, tracker URLs, saved filter views, keyboard contro
 
 qui provides tools to manage torrent lists: tags, categories, tracker URLs, saved filter views, keyboard control, table columns, a torrent creator, `.torrent` export, MediaInfo, and BDInfo Disc reports. For queue, speed, and share limits, see [qBittorrent Preferences](./instance-settings.md#qbittorrent-preferences).
 
+## Force refresh
+
+If a newly added torrent is missing or a row looks incomplete, click **Force refresh** (the circular arrow to the left of **Appearance**) in the instance header. qui reconnects to the instance for a full snapshot, discards the loaded list pages and live-update baseline, and reloads the first page. Search, filters, and sorting stay unchanged; selection and loaded pagination reset.
+
+This works with qBittorrent and Transmission. In the unified view, it refreshes the instances selected in that view. It does not delete torrents or downloaded files. If an instance cannot be reached, qui shows an error and keeps the displayed list so you can retry.
+
 ## Tags and categories
 
 Manage tags and categories from the **Tags** and **Categories** sections in the filter sidebar. Click **Create tag** or **Create category** at the top of a section. Open the context menu on a tag or category for the other actions.

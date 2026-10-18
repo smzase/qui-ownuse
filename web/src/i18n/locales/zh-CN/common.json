@@ -46,6 +46,9 @@
     "showItem": "显示{{item}}"
   },
   "header": {
+    "forceRefresh": "强制刷新",
+    "forceRefreshSuccess": "种子列表已刷新",
+    "forceRefreshError": "无法刷新种子列表，请检查实例连接后重试。",
     "currentInstance": "当前实例：{{name}}。点击切换实例。",
     "connected": "已连接",
     "disconnected": "已断开",

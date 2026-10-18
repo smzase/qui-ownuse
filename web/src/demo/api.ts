@@ -126,6 +126,7 @@ export function createRoutes(store: DemoStore): Route[] {
   })
 
   on("GET", "/instances/:instanceId/torrents", ({ params, url }) => json(store.query([id(params)], parseListParams(url), false)))
+  on("POST", "/instances/:instanceId/torrents/refresh", () => noContent())
   on("GET", "/torrents/cross-instance", ({ url }) => {
     const ids = (url.searchParams.get("instanceIds") ?? "").split(",").map(Number).filter(n => n > 0)
     return json(store.query(ids.length ? ids : store.instances.map(i => i.id), parseListParams(url), true))

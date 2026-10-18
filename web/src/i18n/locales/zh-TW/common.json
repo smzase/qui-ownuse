@@ -46,6 +46,9 @@
     "showItem": "顯示{{item}}"
   },
   "header": {
+    "forceRefresh": "強制重新整理",
+    "forceRefreshSuccess": "種子清單已重新整理",
+    "forceRefreshError": "無法重新整理種子清單，請檢查實例連線後重試。",
     "currentInstance": "目前實例：{{name}}。點選切換實例。",
     "connected": "已連線",
     "disconnected": "已斷開",

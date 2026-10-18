@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useTorrentSelection } from "@/contexts/TorrentSelectionContext"
+import { useLayoutRoute } from "@/contexts/LayoutRouteContext"
 import { useInstances } from "@/hooks/useInstances"
 import { useIsMobile } from "@/hooks/useMediaQuery"
 import { usePersistedCompactViewState } from "@/hooks/usePersistedCompactViewState"
@@ -56,6 +57,7 @@ export function Torrents({ instanceId, instanceName, isAllInstancesView = false,
   const { viewMode } = usePersistedCompactViewState("desktop")
   const { zoomLevel } = usePersistedZoomLevel(100)
   const { clearSelection } = useTorrentSelection()
+  const { torrentListRevision } = useLayoutRoute()
   const { instances } = useInstances()
   const spreadsheetDisguise = useSpreadsheetDisguise()
   const [persistedUnifiedFilter] = usePersistedUnifiedInstanceFilter()
@@ -616,6 +618,7 @@ export function Torrents({ instanceId, instanceName, isAllInstancesView = false,
               >
                 <div className="h-full" style={{ zoom: zoomLevel !== 100 ? zoomLevel / 100 : undefined }}>
                   <TorrentTableResponsive
+                    key={torrentListRevision}
                     instanceId={instanceId}
                     instanceIds={unifiedScopeInstanceIds}
                     filters={filters}
@@ -683,6 +686,7 @@ export function Torrents({ instanceId, instanceName, isAllInstancesView = false,
         {isMobile && (
           <div className="flex flex-col h-full px-4">
             <TorrentTableResponsive
+              key={torrentListRevision}
               instanceId={instanceId}
               instanceIds={unifiedScopeInstanceIds}
               filters={filters}

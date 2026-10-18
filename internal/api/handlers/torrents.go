@@ -149,6 +149,22 @@ func NewTorrentsHandler(syncManager *qbittorrent.SyncManager, jackettService *ja
 	return h
 }
 
+func (h *TorrentsHandler) RefreshTorrents(w http.ResponseWriter, r *http.Request) {
+	instanceID, err := strconv.Atoi(chi.URLParam(r, "instanceID"))
+	if err != nil || instanceID <= 0 {
+		RespondError(w, http.StatusBadRequest, "Invalid instance ID")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	if err := h.syncManager.RefreshTorrents(ctx, instanceID); err != nil {
+		log.Warn().Err(err).Int("instanceID", instanceID).Msg("Failed to refresh torrent list")
+		RespondError(w, http.StatusBadGateway, "Failed to refresh torrent list from the instance")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListTorrents returns paginated torrents for an instance with enhanced metadata
 func (h *TorrentsHandler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	// Get instance ID from URL

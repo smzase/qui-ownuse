@@ -48,6 +48,9 @@
   "expand": "Expandir",
   "collapse": "Recolher",
   "header": {
+    "forceRefresh": "Forçar atualização",
+    "forceRefreshSuccess": "Lista de torrents atualizada",
+    "forceRefreshError": "Não foi possível atualizar a lista de torrents. Verifique a conexão com a instância e tente novamente.",
     "showColumnFilters": "Mostrar filtros de coluna",
     "hideColumnFilters": "Ocultar filtros de coluna",
     "currentInstance": "Instância atual: {{name}}. Clique para trocar de instância.",
