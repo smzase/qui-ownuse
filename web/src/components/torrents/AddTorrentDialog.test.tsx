@@ -4,19 +4,23 @@
  */
 
 import { api } from "@/lib/api"
-import type { AppPreferences, InstanceResponse } from "@/types"
+import type { AppPreferences, InstanceResponse, PreferenceField } from "@/types"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { AddTorrentDialog, type AddTorrentDropPayload } from "./AddTorrentDialog"
 
 const { metadataResult } = vi.hoisted(() => ({
-  metadataResult: { data: undefined as { categories: Record<string, never>; tags: string[]; preferences?: AppPreferences } | undefined },
+  metadataResult: { data: undefined as { categories: Record<string, never>; tags: string[] } | undefined },
 }))
 
 vi.mock("@/lib/api", () => ({ api: {
   addTorrent: vi.fn(),
   checkTorrentDuplicates: vi.fn(),
+  getInstancePreferenceView: vi.fn(),
+  getCategories: vi.fn(),
+  getTags: vi.fn(),
+  getInstances: vi.fn(),
 } }))
 vi.mock("@/hooks/useInstanceMetadata", () => ({ useInstanceMetadata: () => metadataResult }))
 vi.mock("@/hooks/useInstanceCapabilities", () => ({ useInstanceCapabilities: () => ({ data: { supportsTorrentTmpPath: true, supportsPathAutocomplete: false } }) }))
@@ -35,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   metadataResult.data = undefined
+  localStorage.removeItem("qui-bulk-add-torrent-instances")
   vi.resetAllMocks()
   vi.unstubAllGlobals()
 })
@@ -53,6 +58,8 @@ const magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
 function renderColdDialog() {
   vi.mocked(api.checkTorrentDuplicates).mockResolvedValue({ duplicates: [] })
   vi.mocked(api.addTorrent).mockResolvedValue({ added: 1, failed: 0, message: "" })
+  // The test resolves the preferences itself.
+  vi.mocked(api.getInstancePreferenceView).mockReturnValue(new Promise(() => {}))
 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   const dialog = (dropPayload: AddTorrentDropPayload | null) => (
@@ -65,9 +72,7 @@ function renderColdDialog() {
   return {
     ...ui,
     resolvePreferences(resolved: AppPreferences) {
-      // The metadata fallback fetch writes the preferences into the metadata cache.
-      metadataResult.data = { categories: {}, tags: [], preferences: resolved }
-      client.setQueryData(["instance-metadata", 1], metadataResult.data)
+      client.setQueryData(["instance-preferences", 1], resolved)
       ui.rerender(dialog(null))
     },
     openAdvancedTab() {
@@ -115,4 +120,61 @@ it("keeps a change made before preferences resolve", async () => {
   fireEvent.click(ui.getByRole("button", { name: "addTorrentDialog.footer.add" }))
   await waitFor(() => expect(api.addTorrent).toHaveBeenCalled())
   expect(vi.mocked(api.addTorrent).mock.calls[0][1]).toMatchObject({ autoTMM: false })
+})
+
+it("applies the defaults that the fetch on open returns, after a dropped magnet", async () => {
+  vi.mocked(api.checkTorrentDuplicates).mockResolvedValue({ duplicates: [] })
+  let resolveView: (fields: PreferenceField[]) => void = () => {}
+  vi.mocked(api.getInstancePreferenceView).mockReturnValue(new Promise(resolve => { resolveView = resolve }) as never)
+
+  // Another screen filled the cache before a default changed in qBittorrent.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  client.setQueryData(["instance-preferences", 1], preferences)
+  const dialog = (open: boolean, dropPayload: AddTorrentDropPayload | null) => (
+    <QueryClientProvider client={client}>
+      <AddTorrentDialog instanceId={1} open={open} onOpenChange={() => {}} dropPayload={dropPayload} />
+    </QueryClientProvider>
+  )
+
+  const ui = render(dialog(false, null))
+  // The dropped magnet touches the form before the fetch answers.
+  ui.rerender(dialog(true, { type: "url", urls: [magnet] }))
+  await waitFor(() => expect(api.getInstancePreferenceView).toHaveBeenCalled())
+  resolveView([{ key: "auto_tmm_enabled", value: false }, { key: "save_path", value: "/data/changed" }] as PreferenceField[])
+  ui.rerender(dialog(true, null))
+  fireEvent.mouseDown(ui.getByRole("tab", { name: "addTorrentDialog.tabs.advanced" }))
+
+  await waitFor(() => expect((ui.getByLabelText("addTorrentDialog.options.savePath") as HTMLInputElement).value).toBe("/data/changed"))
+})
+
+it("loads bulk metadata and preference defaults independently while remembering the selected targets", async () => {
+  const instances = [1, 2].map(id => ({ id, name: `Instance ${id}`, clientType: "qbittorrent", connected: true, isActive: true }) as InstanceResponse)
+  localStorage.setItem("qui-bulk-add-torrent-instances", "2")
+  vi.mocked(api.getInstances).mockResolvedValue(instances)
+  vi.mocked(api.getCategories).mockResolvedValue({ linux: { name: "linux", savePath: "/data/linux" } })
+  vi.mocked(api.getTags).mockResolvedValue(["seed"])
+  vi.mocked(api.getInstancePreferenceView).mockResolvedValue([
+    { key: "auto_tmm_enabled", value: false },
+    { key: "save_path", value: "/data/bulk" },
+  ] as PreferenceField[])
+  vi.mocked(api.checkTorrentDuplicates).mockResolvedValue({ duplicates: [] })
+  vi.mocked(api.addTorrent).mockResolvedValue({ added: 1, failed: 0, message: "" })
+
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  const ui = render(
+    <QueryClientProvider client={client}>
+      <AddTorrentDialog instanceId={0} mode="bulk" instances={instances} open onOpenChange={() => {}} dropPayload={{ type: "url", urls: [magnet] }} />
+    </QueryClientProvider>
+  )
+
+  await waitFor(() => expect(client.getQueryData(["instance-metadata", 2])).toEqual({ categories: { linux: { name: "linux", savePath: "/data/linux" } }, tags: ["seed"] }))
+  expect(ui.getByLabelText("Instance 1").getAttribute("aria-checked")).toBe("false")
+  expect(ui.getByLabelText("Instance 2").getAttribute("aria-checked")).toBe("true")
+  expect(api.getCategories).toHaveBeenCalledWith(2)
+  expect(api.getCategories).not.toHaveBeenCalledWith(1)
+  fireEvent.mouseDown(ui.getByRole("tab", { name: "addTorrentDialog.tabs.advanced" }))
+  await waitFor(() => expect((ui.getByLabelText("addTorrentDialog.options.savePath") as HTMLInputElement).value).toBe("/data/bulk"))
+  fireEvent.click(ui.getByRole("button", { name: "bulkAddTorrent" }))
+  await waitFor(() => expect(api.addTorrent).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(api.addTorrent).mock.calls[0]).toEqual([2, expect.objectContaining({ savePath: "/data/bulk", urls: [magnet] })])
 })

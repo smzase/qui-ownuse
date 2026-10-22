@@ -54,14 +54,23 @@ export interface PreferenceField {
   value: unknown
   tab: "behavior" | "downloads" | "connection" | "speed" | "bittorrent" | "rss" | "webui" | "advanced"
   section: string
-  control: "switch" | "number" | "text" | "select" | "path" | "list" | "watchFolders"
+  control: "switch" | "number" | "text" | "password" | "select" | "path" | "list" | "watchFolders"
   wireUnit?: string
   displayUnit?: string
-  optionSource?: "fixed" | "pathAutocomplete"
+  optionSource?: "fixed" | "pathAutocomplete" | "networkInterfaces" | "interfaceAddresses"
   options?: unknown[]
   dependsOn?: string
   readOnly?: boolean
   reason?: string
+}
+
+// One network interface that qBittorrent can bind to. The value "" is "Any interface".
+// available is false for a saved interface or address that qBittorrent does not list.
+export interface NetworkBindingInterface {
+  name: string
+  value: string
+  available: boolean
+  addresses: { address: string; available: boolean }[]
 }
 
 export interface AppPreferences {

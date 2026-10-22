@@ -32,7 +32,7 @@ import { renderTextWithLinks } from "@/lib/linkUtils"
 import { formatSpeedWithUnit, useSpeedUnits } from "@/lib/speedUnits"
 import { canBanPeer, getPeerDisplayAddress } from "@/lib/torrent-peer-address"
 import { getPeerFlagDetails } from "@/lib/torrent-peer-flags"
-import { getStateLabel } from "@/lib/torrent-state-utils"
+import { getStatusBadgeProps } from "@/lib/torrent-table/row-display"
 import { resolveStreamRow, resolveTorrentHashes } from "@/lib/torrent-utils"
 import { getTrackerStatusBadge } from "@/lib/tracker-utils"
 import { cn, copyTextToClipboard, formatBytes, formatDuration } from "@/lib/utils"
@@ -214,7 +214,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
 
 
   // Use the cross-seed hook to find matching torrents (uses backend API with rls library)
-  const { matchingTorrents, isLoadingMatches, allInstances } = useLocalCrossSeedMatches(instanceId, torrent, isCrossSeedTabActive)
+  const { matchingTorrents, matchesError, isLoadingMatches, allInstances } = useLocalCrossSeedMatches(instanceId, torrent, isCrossSeedTabActive)
 
   // Build instance lookup map for CrossSeedTable
   const instanceById = useMemo(
@@ -477,6 +477,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
   const isPeersTabActive = activeTab === "peers"
 
   // flag-icons inlines 400 flags as data URIs, 73% of the boot stylesheet; load it with the tab.
+  // Not emoji flags: Windows has no flag glyphs and shows the letters, such as "US".
   useEffect(() => {
     // offline PWA: the CSS is not precached, flags just render unstyled
     if (isPeersTabActive) void import("flag-icons/css/flag-icons.min.css").catch(() => {})
@@ -1768,6 +1769,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
               <CrossSeedTable
                 matches={matchingTorrents}
                 loading={isLoadingMatches}
+                loadFailed={!!matchesError}
                 incognitoMode={incognitoMode}
                 selectedTorrents={selectedCrossSeedTorrents}
                 onToggleSelection={handleToggleCrossSeedSelection}
@@ -1784,6 +1786,12 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                   {isLoadingMatches ? (
                     <div className="flex items-center justify-center p-8">
                       <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : matchesError ? (
+                    // A refetch that fails keeps the last data: the error wins,
+                    // so the stale matches and their delete actions go away.
+                    <div className="flex items-center justify-center h-32 text-sm text-destructive">
+                      {t("crossSeedTable.loadFailed")}
                     </div>
                   ) : matchingTorrents.length > 0 ? (
                     <div className="space-y-4">
@@ -1855,42 +1863,7 @@ export const TorrentDetailsPanel = memo(function TorrentDetailsPanel({ instanceI
                             }
                           }
 
-                          // Get enriched status (tracker-aware)
-                          const trackerHealth = match.tracker_health ?? null
-                          let statusLabel = getStateLabel(match.state, t)
-                          let statusVariant: "default" | "secondary" | "destructive" | "outline" = "outline"
-                          let statusClass = ""
-
-                          // Check tracker health first (if supported)
-                          if (trackerHealth === "unregistered") {
-                            statusLabel = t("crossSeedTable.statusLabels.unregistered")
-                            statusVariant = "outline"
-                            statusClass = "text-destructive border-destructive/40 bg-destructive/10"
-                          } else if (trackerHealth === "tracker_down") {
-                            statusLabel = t("crossSeedTable.statusLabels.trackerDown")
-                            statusVariant = "outline"
-                            statusClass = "text-yellow-500 border-yellow-500/40 bg-yellow-500/10"
-                          } else if (trackerHealth === "tracker_error") {
-                            statusLabel = t("crossSeedTable.statusLabels.trackerError")
-                            statusVariant = "outline"
-                            statusClass = "text-orange-500 border-orange-500/40 bg-orange-500/10"
-                          } else {
-                            // Normal state-based styling
-                            if (match.state === "downloading" || match.state === "uploading") {
-                              statusVariant = "default"
-                            } else if (
-                              match.state === "stalledDL" ||
-                              match.state === "stalledUP" ||
-                              match.state === "pausedDL" ||
-                              match.state === "pausedUP" ||
-                              match.state === "queuedDL" ||
-                              match.state === "queuedUP"
-                            ) {
-                              statusVariant = "secondary"
-                            } else if (match.state === "error" || match.state === "missingFiles") {
-                              statusVariant = "destructive"
-                            }
-                          }
+                          const { label: statusLabel, variant: statusVariant, className: statusClass } = getStatusBadgeProps(match, true, t)
 
                           // Match type display
                           const matchType = match.matchType as "infohash" | "content_path" | "save_path" | "hardlink" | "reflink" | "release" | "name"

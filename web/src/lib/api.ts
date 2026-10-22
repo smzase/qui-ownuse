@@ -10,6 +10,7 @@ import type {
   ApplicationInfo,
   AppPreferences,
   PreferenceField,
+  NetworkBindingInterface,
   AsyncIndexerFilteringState,
   AuthResponse,
   Automation,
@@ -57,6 +58,7 @@ import type {
   DirScanRun,
   DirScanRunInjection,
   DirScanSettings,
+  DirScanStatus,
   DirScanSettingsUpdate,
   DiscoverJackettResponse,
   DuplicateTorrentMatch,
@@ -503,10 +505,6 @@ function mapRawCrossSeedInstanceResult(instance: RawCrossSeedInstanceResult): Cr
       size: instance.matched_torrent.size ?? 0,
     }: undefined,
   }
-}
-
-function preferencesFromView(fields: PreferenceField[]): AppPreferences {
-  return Object.fromEntries(fields.map(field => [field.key, field.value])) as unknown as AppPreferences
 }
 
 class ApiClient {
@@ -1014,6 +1012,7 @@ class ApiClient {
       order: "asc" | "desc"
       search?: string
       filters?: TorrentFilters | null
+      summary?: boolean
     }>,
     options: { activity?: boolean } = {}
   ): string {
@@ -1030,6 +1029,7 @@ class ApiClient {
         order: stream.order,
         search: stream.search ?? "",
         filters: serializeFilters(stream.filters) ?? null,
+        summary: stream.summary ?? false,
       }))
       params.set("streams", JSON.stringify(normalized))
     }
@@ -2317,25 +2317,27 @@ class ApiClient {
     return this.request<Record<string, string>>("/client-settings")
   }
 
-  // Preferences endpoints. The route returns the catalog view, which the preferences dialog
-  // renders. Until the screens outside the dialog read the view, the client turns it back
-  // into the preferences object that they read.
+  // Preferences endpoints. Both return the catalog view of the preferences.
   async getInstancePreferenceView(instanceId: number): Promise<PreferenceField[]> {
     return this.request<PreferenceField[]>(`/instances/${instanceId}/preferences`)
-  }
-
-  async getInstancePreferences(instanceId: number): Promise<AppPreferences> {
-    return preferencesFromView(await this.getInstancePreferenceView(instanceId))
   }
 
   async updateInstancePreferences(
     instanceId: number,
     preferences: Partial<AppPreferences>
-  ): Promise<AppPreferences> {
-    return preferencesFromView(await this.request<PreferenceField[]>(`/instances/${instanceId}/preferences`, {
+  ): Promise<PreferenceField[]> {
+    return this.request<PreferenceField[]>(`/instances/${instanceId}/preferences`, {
       method: "PATCH",
       body: JSON.stringify(preferences),
-    }))
+    })
+  }
+
+  async getNetworkBinding(instanceId: number): Promise<NetworkBindingInterface[]> {
+    return this.request<NetworkBindingInterface[]>(`/instances/${instanceId}/network-binding`)
+  }
+
+  async sendTestEmail(instanceId: number): Promise<void> {
+    await this.request<void>(`/instances/${instanceId}/preferences/test-email`, { method: "POST" })
   }
 
   // Transmission daemon session settings
@@ -2970,10 +2972,8 @@ class ApiClient {
     return this.request(`/dir-scan/directories/${directoryId}/scan`, { method: "DELETE" })
   }
 
-  async getDirScanStatus(directoryId: number): Promise<DirScanRun | { status: "idle" }> {
-    return this.request<DirScanRun | { status: "idle" }>(
-      `/dir-scan/directories/${directoryId}/status`
-    )
+  async getDirScanStatus(directoryId: number): Promise<DirScanStatus> {
+    return this.request<DirScanStatus>(`/dir-scan/directories/${directoryId}/status`)
   }
 
   async listDirScanRuns(

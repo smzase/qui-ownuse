@@ -3,13 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-import type { AppPreferences, Category } from "@/types"
-
-export interface InstanceMetadata {
-  categories: Record<string, Category>
-  tags: string[]
-  preferences?: AppPreferences
-}
+import type { InstanceMetadata } from "@/hooks/useInstanceMetadata"
 
 const CACHE_PREFIX = "qui.instance-meta-cache."
 const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes

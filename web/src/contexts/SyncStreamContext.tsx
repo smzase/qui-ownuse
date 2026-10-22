@@ -71,6 +71,8 @@ export interface StreamParams {
   order: "asc" | "desc"
   search?: string
   filters?: TorrentFilters
+  // summary asks for the totals of the view without its rows.
+  summary?: boolean
 }
 
 // normalizeInstanceIds returns a sorted, de-duplicated, positive-only copy used for
@@ -468,6 +470,7 @@ export function SyncStreamProvider({ children }: { children: React.ReactNode }) 
         order: entry.params.order,
         search: entry.params.search ?? "",
         filters: entry.params.filters ?? null,
+        summary: entry.params.summary ?? false,
       }))
       .sort((a, b) => a.key.localeCompare(b.key))
 
@@ -1424,6 +1427,7 @@ export function createStreamKey(params: StreamParams): string {
       order: params.order,
       search: params.search ?? "",
       filters: params.filters ?? null,
+      summary: params.summary ?? false,
     })
   } catch (err) {
     // Fallback for non-serializable filters - log for debugging

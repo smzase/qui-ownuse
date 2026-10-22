@@ -18,28 +18,36 @@ import (
 
 func TestUpstreamMergePreservesForkSQLite(t *testing.T) {
 	t.Parallel()
-	conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "fork.db"))
-	require.NoError(t, err)
-	conn.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
-	db := &DB{writerConn: conn, dialect: DialectSQLite}
-	checkForkUpgrade(t.Context(), t, db, migrationsFS, "migrations", "097_scope_client_settings_to_users.sql", db.migrate)
-	rows, err := conn.QueryContext(t.Context(), "PRAGMA foreign_key_check")
-	require.NoError(t, err)
-	defer rows.Close()
-	require.False(t, rows.Next(), "upgrade must not leave broken foreign keys")
-	require.NoError(t, rows.Err())
+	for _, cutoff := range []string{"097_scope_client_settings_to_users.sql", "110_restore_fork_instance_view.sql"} {
+		t.Run(cutoff, func(t *testing.T) {
+			conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "fork.db"))
+			require.NoError(t, err)
+			conn.SetMaxOpenConns(1)
+			t.Cleanup(func() { require.NoError(t, conn.Close()) })
+			db := &DB{writerConn: conn, dialect: DialectSQLite}
+			checkForkUpgrade(t.Context(), t, db, migrationsFS, "migrations", cutoff, db.migrate)
+			rows, err := conn.QueryContext(t.Context(), "PRAGMA foreign_key_check")
+			require.NoError(t, err)
+			defer rows.Close()
+			require.False(t, rows.Next(), "upgrade must not leave broken foreign keys")
+			require.NoError(t, rows.Err())
+		})
+	}
 }
 
 func TestUpstreamMergePreservesForkPostgresIntegration(t *testing.T) {
 	t.Parallel()
-	ctx, dsn := openPostgresTestSchema(t)
-	conn, err := sql.Open("pgx", dsn)
-	require.NoError(t, err)
-	conn.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, conn.Close()) })
-	db := &DB{writerConn: conn, dialect: DialectPostgres}
-	checkForkUpgrade(ctx, t, db, postgresMigrationsFS, "postgres_migrations", "098_scope_client_settings_to_users.sql", db.migratePostgres)
+	for _, cutoff := range []string{"098_scope_client_settings_to_users.sql", "111_restore_fork_instance_view.sql"} {
+		t.Run(cutoff, func(t *testing.T) {
+			ctx, dsn := openPostgresTestSchema(t)
+			conn, err := sql.Open("pgx", dsn)
+			require.NoError(t, err)
+			conn.SetMaxOpenConns(1)
+			t.Cleanup(func() { require.NoError(t, conn.Close()) })
+			db := &DB{writerConn: conn, dialect: DialectPostgres}
+			checkForkUpgrade(ctx, t, db, postgresMigrationsFS, "postgres_migrations", cutoff, db.migratePostgres)
+		})
+	}
 }
 
 func checkForkUpgrade(ctx context.Context, t *testing.T, db *DB, fsys fs.ReadDirFS, dir, cutoff string, migrate func() error) {
@@ -74,12 +82,18 @@ func checkForkUpgrade(ctx context.Context, t *testing.T, db *DB, fsys fs.ReadDir
 	exec("INSERT INTO users (id, username, password_hash, role) VALUES (1, 'admin', 'hash-admin', 'admin'), (2, 'alice', 'hash-alice', 'user'), (3, 'bob', 'hash-bob', 'user')")
 	exec("INSERT INTO string_pool (value) VALUES ('fork-fixture') ON CONFLICT (value) DO NOTHING")
 	exec(`INSERT INTO instances (id, name_id, host_id, username_id, password_encrypted, client_type, owner_id, tls_skip_verify, has_local_filesystem_access)
-		SELECT 1, id, id, id, 'encrypted-fixture', 'transmission', 2, TRUE, TRUE FROM string_pool WHERE value = 'fork-fixture'`)
+		SELECT 1, id, id, id, 'encrypted-fixture', 'transmission', 2, 1, 1 FROM string_pool WHERE value = 'fork-fixture'`)
 	exec("INSERT INTO instance_shares (instance_id, user_id, created_by) VALUES (1, 3, 2)")
 	exec("INSERT INTO user_permissions (user_id, permission) VALUES (2, 'manage_updates')")
 	exec("INSERT INTO client_settings (user_id, key, value) VALUES (2, 'sidebar', '{\"hidden\":[\"rss\"]}'), (3, 'sidebar', '{\"hidden\":[]}'), (2, 'layout', '{\"sync\":true}')")
 	exec("INSERT INTO api_keys (key_hash, name_id, user_id) SELECT 'fixture-key-hash', id, 2 FROM string_pool WHERE value = 'fork-fixture'")
-	exec("INSERT INTO theme_settings (id, theme_id, mode, variation) VALUES (1, 'custom-fixture', 'dark', '') ON CONFLICT (id) DO UPDATE SET theme_id = excluded.theme_id, mode = excluded.mode")
+	previousMerge := strings.Contains(cutoff, "restore_fork_instance_view")
+	if previousMerge {
+		exec("INSERT INTO theme_settings (slot, theme_id, mode, variation) VALUES ('default', 'custom-fixture', 'dark', '') ON CONFLICT (slot) DO UPDATE SET theme_id = excluded.theme_id, mode = excluded.mode")
+		exec("UPDATE instances SET ssh_host = 'fixture.invalid', ssh_port = 2222, ssh_username = 'fixture', ssh_key_encrypted = 'fixture-key', ssh_host_key_encrypted = 'fixture-pin' WHERE id = 1")
+	} else {
+		exec("INSERT INTO theme_settings (id, theme_id, mode, variation) VALUES (1, 'custom-fixture', 'dark', '') ON CONFLICT (id) DO UPDATE SET theme_id = excluded.theme_id, mode = excluded.mode")
+	}
 
 	queries := []string{
 		"SELECT id, username, password_hash, role FROM users ORDER BY id",
@@ -88,6 +102,9 @@ func checkForkUpgrade(ctx context.Context, t *testing.T, db *DB, fsys fs.ReadDir
 		"SELECT user_id, permission FROM user_permissions ORDER BY user_id, permission",
 		"SELECT user_id, key, value FROM client_settings ORDER BY user_id, key",
 		"SELECT key_hash, user_id FROM api_keys ORDER BY id",
+	}
+	if previousMerge {
+		queries = append(queries, "SELECT ssh_host, ssh_port, ssh_username, ssh_key_encrypted, ssh_host_key_encrypted FROM instances ORDER BY id")
 	}
 	read := func(query string) [][]any {
 		t.Helper()
@@ -119,13 +136,19 @@ func checkForkUpgrade(ctx context.Context, t *testing.T, db *DB, fsys fs.ReadDir
 		for i, query := range queries {
 			require.Equal(t, before[i], read(query), query)
 		}
-		var clientType, themeID, mode, sshHost string
+		var clientType, themeID, mode, sshHost, sshTier string
 		var ownerID, sshPort int
-		require.NoError(t, conn.QueryRowContext(ctx, "SELECT client_type, owner_id, ssh_host, ssh_port FROM instances_view WHERE id = 1").Scan(&clientType, &ownerID, &sshHost, &sshPort))
+		require.NoError(t, conn.QueryRowContext(ctx, "SELECT client_type, owner_id, ssh_host, ssh_port, ssh_tier FROM instances_view WHERE id = 1").Scan(&clientType, &ownerID, &sshHost, &sshPort, &sshTier))
 		require.Equal(t, "transmission", clientType)
 		require.Equal(t, 2, ownerID)
-		require.Empty(t, sshHost)
-		require.Equal(t, 22, sshPort)
+		if previousMerge {
+			require.Equal(t, "fixture.invalid", sshHost)
+			require.Equal(t, 2222, sshPort)
+		} else {
+			require.Empty(t, sshHost)
+			require.Equal(t, 22, sshPort)
+		}
+		require.Equal(t, "sftp", sshTier)
 		require.NoError(t, conn.QueryRowContext(ctx, "SELECT theme_id, mode FROM theme_settings WHERE slot = 'default'").Scan(&themeID, &mode))
 		require.Equal(t, "custom-fixture", themeID)
 		require.Equal(t, "dark", mode)

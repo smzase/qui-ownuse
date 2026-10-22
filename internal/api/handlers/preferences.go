@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	qbt "github.com/autobrr/go-qbittorrent"
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
@@ -68,6 +69,56 @@ func (h *PreferencesHandler) UpdatePreferences(w http.ResponseWriter, r *http.Re
 	}
 
 	h.respondWithView(w, r, instanceID, "preferences:getUpdated")
+}
+
+// SendTestEmail asks qBittorrent to send a test email. Success means that qBittorrent queued it.
+func (h *PreferencesHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
+	instanceID, err := strconv.Atoi(chi.URLParam(r, "instanceID"))
+	if err != nil {
+		log.Error().Err(err).Msg("Invalid instance ID")
+		http.Error(w, "Invalid instance ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.syncManager.SendTestEmail(r.Context(), instanceID); err != nil {
+		if respondIfInstanceDisabled(w, err, instanceID, "preferences:testEmail") {
+			return
+		}
+		if errors.Is(err, qbt.ErrUnsupportedVersion) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		log.Error().Err(err).Int("instanceID", instanceID).Msg("Failed to send test email")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetNetworkBinding returns the network interfaces and addresses that qBittorrent can bind to.
+func (h *PreferencesHandler) GetNetworkBinding(w http.ResponseWriter, r *http.Request) {
+	instanceID, err := strconv.Atoi(chi.URLParam(r, "instanceID"))
+	if err != nil {
+		log.Error().Err(err).Msg("Invalid instance ID")
+		http.Error(w, "Invalid instance ID", http.StatusBadRequest)
+		return
+	}
+
+	binding, err := h.syncManager.GetNetworkBinding(r.Context(), instanceID)
+	if err != nil {
+		if respondIfInstanceDisabled(w, err, instanceID, "preferences:networkBinding") {
+			return
+		}
+		log.Error().Err(err).Int("instanceID", instanceID).Msg("Failed to get network binding")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(binding); err != nil {
+		log.Error().Err(err).Int("instanceID", instanceID).Msg("Failed to encode network binding")
+	}
 }
 
 func (h *PreferencesHandler) respondWithView(w http.ResponseWriter, r *http.Request, instanceID int, operation string) {

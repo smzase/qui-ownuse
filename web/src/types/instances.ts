@@ -36,6 +36,7 @@ export interface Instance {
 export interface FilesystemCapabilities {
   read: boolean
   identity: boolean
+  trustedIdentity: boolean
   write: boolean
   content: boolean
 }
@@ -175,6 +176,7 @@ export interface InstanceCapabilities {
   subcategoriesAlwaysEnabled: boolean
   supportsTorrentTmpPath: boolean
   supportsPathAutocomplete: boolean
+  supportsTestEmail: boolean
   supportsFreeSpacePathSource: boolean
   supportsSetRSSFeedURL: boolean
   supportsShareLimitsAction: boolean

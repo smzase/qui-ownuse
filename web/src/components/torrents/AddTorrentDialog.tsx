@@ -179,16 +179,14 @@ function createFileKey(file: File): string {
 }
 
 async function fetchInstanceMetadata(instanceId: number): Promise<InstanceMetadata> {
-  const [categories, tags, preferences] = await Promise.all([
+  const [categories, tags] = await Promise.all([
     api.getCategories(instanceId),
     api.getTags(instanceId),
-    api.getInstancePreferences(instanceId),
   ])
 
   const metadata: InstanceMetadata = {
     categories: categories ?? {},
     tags: Array.isArray(tags) ? tags : [],
-    preferences,
   }
 
   // Persist to localStorage so a slow/unavailable instance doesn't block
@@ -296,7 +294,7 @@ export function AddTorrentDialog({
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen
   const setOpen = onOpenChange || setInternalOpen
 
-  // Fetch metadata (categories, tags, preferences) with single API call
+  // Fetch metadata (categories and tags) with single API call
   const { data: singleMetadata } = useInstanceMetadata(primaryInstanceId)
   const bulkMetadataQueries = useQueries({
     queries: selectedBulkInstances.map((instance) => ({
@@ -333,7 +331,7 @@ export function AddTorrentDialog({
   const metadata = isBulkMode ? loadedBulkMetadata[0] ?? singleMetadata : singleMetadata
   const categories = isBulkMode ? bulkCategories : metadata?.categories
   const availableTags = isBulkMode && loadedBulkMetadata.length > 0 ? getAvailableTags(loadedBulkMetadata) : metadata?.tags
-  const addTorrentPreferences = useAddTorrentPreferences(primaryInstanceId, { fetchIfMissing: false })
+  const addTorrentPreferences = useAddTorrentPreferences(primaryInstanceId, { enabled: open })
   const preferenceDefaults = addTorrentPreferences.defaults
 
   const { data: capabilities } = useInstanceCapabilities(primaryInstanceId)
@@ -959,12 +957,11 @@ export function AddTorrentDialog({
     checkForDuplicates(currentFiles, currentUrls)
   }, [bulkSelectedInstanceIds, checkForDuplicates, form, isBulkMode, open])
   // The dialog can mount before instance metadata resolves (magnet handler route),
-  // where defaultValues fall back to the hardcoded values. Seed the preference-derived
-  // fields again when preferences land, skipping anything the user already changed.
-  const seededInstanceRef = useRef<number | null>(null)
+  // where defaultValues fall back to the hardcoded values, and each open fetches the
+  // preferences again. Seed the preference-derived fields each time preferences land,
+  // skipping anything the user already changed.
   useEffect(() => {
-    if (!addTorrentPreferences.loaded || seededInstanceRef.current === primaryInstanceId) return
-    seededInstanceRef.current = primaryInstanceId
+    if (!addTorrentPreferences.loaded) return
 
     // Seeding is not a user edit, so leave the field meta pristine.
     const pristine = (field: keyof typeof preferenceDefaults) => !form.getFieldMeta(field)?.isDirty
@@ -976,7 +973,7 @@ export function AddTorrentDialog({
     if (pristine("tempPathEnabled")) form.setFieldValue("tempPathEnabled", preferenceDefaults.tempPathEnabled, opts)
     if (pristine("tempPath")) form.setFieldValue("tempPath", preferenceDefaults.tempPath, opts)
     if (pristine("startPaused")) form.setFieldValue("startPaused", preferenceDefaults.startPaused, opts)
-  }, [form, primaryInstanceId, addTorrentPreferences.loaded, preferenceDefaults])
+  }, [form, addTorrentPreferences.loaded, preferenceDefaults])
 
   const setSavePath = useCallback((path: string) => {
     form.setFieldValue("savePath", path)

@@ -292,6 +292,8 @@ export function TorrentTableDialogs({
         onDeleteCrossSeedsChange={setDeleteCrossSeeds}
         crossSeedWarning={crossSeedWarning}
         onConfirm={handleDeleteWrapper}
+        isAllSelected={isAllSelected}
+        previewTorrents={contextTorrents}
       />
 
       {supportsQbittorrentOnlyActions && <SetCommentDialog

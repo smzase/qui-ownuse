@@ -80,6 +80,7 @@ export function TransmissionPreferencesForm({ instanceId, section = "torrents", 
       api.updateTransmissionPreferences(instanceId, settings),
     onSuccess: updated => {
       queryClient.setQueryData(["transmission-preferences", instanceId], updated)
+      void queryClient.invalidateQueries({ queryKey: ["instance-preferences", instanceId], exact: true })
       setDraft(updated)
       setDirty(new Set())
       toast.success(t("preferences.transmission.toast.success"))
