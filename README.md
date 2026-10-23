@@ -59,7 +59,7 @@ docker run -d \
 ## 支持
 
 - [GitHub Discussions](https://github.com/autobrr/qui/discussions/new/choose) - 功能请求与错误报告
-- [GitHub Issues](https://github.com/autobrr/qui/issues) - 开发进度跟踪
+- [GitHub Issues](https://github.com/autobrr/qui/issues) - 已确认的错误与计划中的工作
 
 ## 支持开发
 
@@ -109,9 +109,7 @@ qui 由志愿者开发和维护。您的支持将帮助我们持续改进项目�
 
 ## 贡献
 
-欢迎贡献代码。
-
-开发与测试流程请参见 [`CONTRIBUTING.md`](.github/CONTRIBUTING.md)。
+[`CONTRIBUTING.md`](.github/CONTRIBUTING.md) 说明了贡献资格、参与方式，以及开发与测试流程。
 
 ## 其他界面
 

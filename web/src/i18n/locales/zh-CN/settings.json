@@ -59,6 +59,11 @@
       "updateFailed": "更新权限失败"
     }
   },
+  "nav": {
+    "general": "常规",
+    "connections": "连接",
+    "access": "访问"
+  },
   "language": {
     "cardTitle": "语言",
     "cardDescription": "选择您偏好的显示语言"

@@ -59,6 +59,11 @@
       "updateFailed": "Échec de la mise à jour des autorisations"
     }
   },
+  "nav": {
+    "general": "Général",
+    "connections": "Connexions",
+    "access": "Accès"
+  },
   "language": {
     "cardTitle": "Langue",
     "cardDescription": "Choisissez votre langue d'affichage préférée"

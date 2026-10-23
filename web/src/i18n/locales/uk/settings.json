@@ -59,6 +59,11 @@
       "updateFailed": "Не вдалося оновити дозволи"
     }
   },
+  "nav": {
+    "general": "Загальні",
+    "connections": "Підключення",
+    "access": "Доступ"
+  },
   "language": {
     "cardTitle": "Мова",
     "cardDescription": "Виберіть потрібну мову відображення"

@@ -59,6 +59,11 @@
       "updateFailed": "Berechtigungen konnten nicht aktualisiert werden"
     }
   },
+  "nav": {
+    "general": "Allgemein",
+    "connections": "Verbindungen",
+    "access": "Zugriff"
+  },
   "language": {
     "cardTitle": "Sprache",
     "cardDescription": "Wähle deine bevorzugte Anzeigesprache"

@@ -59,6 +59,11 @@
       "updateFailed": "Oprávnění se nepodařilo aktualizovat"
     }
   },
+  "nav": {
+    "general": "Obecné",
+    "connections": "Připojení",
+    "access": "Přístup"
+  },
   "language": {
     "cardTitle": "Jazyk",
     "cardDescription": "Vyberte svůj preferovaný jazyk pro zobrazení"
