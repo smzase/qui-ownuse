@@ -107,6 +107,14 @@ qui 由志愿者开发和维护。您的支持将帮助我们持续改进项目�
 
 如需其他币种或捐赠方式，请 [通过 Discord 联系我们](https://discord.autobrr.com/qui)。
 
+[Macroscope](https://macroscope.com) 通过其开源计划支持 qui 的代码审查。
+
+<p>
+  <a href="https://macroscope.com">
+    <img alt="Sponsored by Macroscope" src=".github/assets/macroscope-banner.png" width="400">
+  </a>
+</p>
+
 ## 贡献
 
 [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) 说明了贡献资格、参与方式，以及开发与测试流程。

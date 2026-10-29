@@ -92,6 +92,20 @@ linters:
         - pattern: ^orphanscan\.(isIgnoredPath|isPathProtectedByIgnorePaths|TorrentFileMap\.(Has|HasAnyInDir))$
           pkg: ^github\.com/autobrr/qui/internal/services/orphanscan$
           msg: ask the protected path module in internal/services/orphanscan/protected.go
+        - pattern: ^crossseed\.(decideSearchScope|decideTorznabIndexers|withoutGazelleTorznabIndexers|Service\.(resolveTorznabIndexerIDs|gazelleTorznabIndexers|contentFilterFacts))$
+          pkg: ^github\.com/autobrr/qui/internal/services/crossseed$
+          msg: ask the Search scope module in internal/services/crossseed/search_scope.go (ADR 0029)
+        - pattern: ^qbittorrent\.Category(Save|Download)Path$
+          pkg: ^github\.com/autobrr/qui/internal/qbittorrent$
+          msg: read category folders through SyncManager.InstanceFolders
+        # No pkg: a call through a local interface expands to the package of the caller.
+        - pattern: ^\w+\.\w+\.AddTorrent$
+          msg: use crossseed.Adder
+        - pattern: ^\w+\.\w+\.RenameTorrent(File|Folder)$
+          msg: use crossseed.Aligner
+        - pattern: ^models\.CrossSeedStore\.\w*PartialPool\w*$
+          pkg: ^github\.com/autobrr/qui/internal/models$
+          msg: ask the partial pool coordinator in internal/services/crossseed/partial_pool.go
 
     exhaustive:
       # A switch with a default has handled the rest by definition, and the repo
@@ -130,6 +144,12 @@ linters:
           - forbidigo
         text: preference catalog
 
+      # Only the Instance folders module resolves category folders.
+      - path: internal/qbittorrent/(instance_folders|category_paths)(_test)?\.go$
+        linters:
+          - forbidigo
+        text: SyncManager\.InstanceFolders
+
       # The one-parser rule binds only the cross-seed production code.
       - path-except: ^internal/services/crossseed/
         linters:
@@ -145,6 +165,39 @@ linters:
         linters:
           - forbidigo
         text: protected path module
+
+      # Only the Search scope module decides what a search asks (ADR 0029).
+      - path: internal/services/crossseed/search_scope\.go$|_test\.go$
+        linters:
+          - forbidigo
+        text: Search scope module
+
+      # Only the Adder adds a torrent in the cross-seed and Dir Scan packages (ADR 0022).
+      - path-except: ^internal/services/(crossseed|dirscan)/
+        linters:
+          - forbidigo
+        text: use crossseed\.Adder
+      - path: internal/services/crossseed/adder\.go$|_test\.go$
+        linters:
+          - forbidigo
+        text: use crossseed\.Adder
+
+      # Only the Aligner renames torrent files in the cross-seed and Dir Scan packages.
+      - path-except: ^internal/services/(crossseed|dirscan)/
+        linters:
+          - forbidigo
+        text: use crossseed\.Aligner
+      - path: internal/services/crossseed/aligner\.go$|_test\.go$
+        linters:
+          - forbidigo
+        text: use crossseed\.Aligner
+
+      # Only the partial pool coordinator and the store itself call the partial
+      # pool store methods.
+      - path: internal/services/crossseed/partial_pool\.go$|internal/models/crossseed_partial_pool\.go$|_test\.go$
+        linters:
+          - forbidigo
+        text: partial pool coordinator
 
       # A parameter an interface forces on an implementation still documents
       # what the caller passes; renaming it to _ loses that.

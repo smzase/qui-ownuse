@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -118,12 +119,25 @@ func (*discPolicySyncManager) RenameTorrent(context.Context, int, string, string
 	return nil
 }
 
-func (*discPolicySyncManager) RenameTorrentFile(context.Context, int, string, string, string) error {
+func (m *discPolicySyncManager) RenameTorrentFile(_ context.Context, _ int, hash, oldPath, newPath string) error {
+	for i, file := range m.files[normalizeHash(hash)] {
+		if file.Name == oldPath {
+			m.files[normalizeHash(hash)][i].Name = newPath
+		}
+	}
 	return nil
 }
 
-func (m *discPolicySyncManager) RenameTorrentFolder(context.Context, int, string, string, string) error {
-	return m.renameFolderErr
+func (m *discPolicySyncManager) RenameTorrentFolder(_ context.Context, _ int, hash, oldPath, newPath string) error {
+	if m.renameFolderErr != nil {
+		return m.renameFolderErr
+	}
+	for i, file := range m.files[normalizeHash(hash)] {
+		if suffix, ok := strings.CutPrefix(file.Name, oldPath+"/"); ok {
+			m.files[normalizeHash(hash)][i].Name = newPath + "/" + suffix
+		}
+	}
+	return nil
 }
 
 func (*discPolicySyncManager) GetCategories(context.Context, int) (map[string]qbt.Category, error) {
@@ -158,7 +172,7 @@ func TestTitleRescueForcesPausedFullRecheck(t *testing.T) {
 		Size:        1_000_000_000,
 	}
 	mockSync := &discPolicySyncManager{
-		files: map[string]qbt.TorrentFiles{matchedHash: candidateFiles},
+		files: map[string]qbt.TorrentFiles{matchedHash: candidateFiles, newHash: slices.Clone(sourceFiles)},
 		props: map[string]*qbt.TorrentProperties{
 			matchedHash: {SavePath: "/downloads"},
 		},
@@ -176,6 +190,7 @@ func TestTitleRescueForcesPausedFullRecheck(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		script := startSettleScript(t, service, verifyScript(newHash)...)
 		startPaused := false
+		withAdder(service)
 		result := service.processCrossSeedCandidate(
 			context.Background(),
 			CrossSeedCandidate{
@@ -192,8 +207,6 @@ func TestTitleRescueForcesPausedFullRecheck(t *testing.T) {
 		)
 
 		require.True(t, result.Success, result.Message)
-		require.Equal(t, "true", mockSync.addedOptions["paused"])
-		require.Equal(t, "true", mockSync.addedOptions["stopped"])
 		require.Contains(t, mockSync.bulkActions, "recheck:"+newHash)
 		require.NotContains(t, mockSync.bulkActions, "resume:"+newHash)
 		actions, _ := script.wait()
@@ -294,15 +307,12 @@ func TestDiscLayoutPolicy_ForcePausedEvenWhenStartPausedFalse(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		script := startSettleScript(t, service, completeScript(newHash)...)
+		withAdder(service)
 		result := service.processCrossSeedCandidate(ctx, candidate, []byte("torrent"), newHash, "", matchedName, req, service.releaseCache.Parse(matchedName), sourceFiles, nil)
 
 		// Verify the torrent was added successfully
 		require.True(t, result.Success, "Expected success, got: %s", result.Message)
 		require.Equal(t, "added", result.Status)
-
-		// Even though StartPaused=false, disc layout policy should force paused
-		assert.Equal(t, "true", mockSync.addedOptions["paused"], "Disc layout should force paused=true")
-		assert.Equal(t, "true", mockSync.addedOptions["stopped"], "Disc layout should force stopped=true")
 
 		// Verify the status message mentions disc layout
 		assert.Contains(t, result.Message, "disc layout", "Result message should mention disc layout")
@@ -389,6 +399,7 @@ func TestDiscLayoutPolicy_ResumeOnlyAfterFullRecheck(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		script := startSettleScript(t, service, completeScript(newHash)...)
+		withAdder(service)
 		result := service.processCrossSeedCandidate(ctx, candidate, []byte("torrent"), newHash, "", matchedName, req, service.releaseCache.Parse(matchedName), sourceFiles, nil)
 
 		// Verify the torrent was added successfully
@@ -479,6 +490,7 @@ func TestDiscLayoutPolicy_NonDiscTorrentAllowsAutoResume(t *testing.T) {
 		SkipAutoResume: false,
 	}
 
+	withAdder(service)
 	result := service.processCrossSeedCandidate(ctx, candidate, []byte("torrent"), newHash, "", matchedName, req, service.releaseCache.Parse(matchedName), sourceFiles, nil)
 
 	// Verify the torrent was added successfully
@@ -579,12 +591,11 @@ func TestLinkModeFilesystemFallback_ResumeOnlyAfterFullRecheck(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		script := startSettleScript(t, service, completeScript(newHash)...)
+		withAdder(service)
 		result := service.processCrossSeedCandidate(ctx, candidate, []byte("torrent"), newHash, "", matchedName, req, service.releaseCache.Parse(matchedName), sourceFiles, nil)
 
 		require.True(t, result.Success, "Expected success, got: %s", result.Message)
 		require.Equal(t, "added", result.Status)
-		assert.Equal(t, "true", mockSync.addedOptions["paused"])
-		assert.Equal(t, "true", mockSync.addedOptions["stopped"])
 		assert.Contains(t, result.Message, "link-mode filesystem fallback")
 
 		for _, action := range mockSync.bulkActions {
@@ -677,11 +688,12 @@ func TestLinkModeFilesystemFallback_DoesNotRecheckWhenAlignmentFails(t *testing.
 		StartPaused: &startPausedFalse,
 	}
 
+	withAdder(service)
 	result := service.processCrossSeedCandidate(ctx, candidate, []byte("torrent"), newHash, "", sourceName, req, service.releaseCache.Parse(sourceName), sourceFiles, nil)
 
 	require.False(t, result.Success)
 	require.Equal(t, "alignment_failed", result.Status)
 	require.Contains(t, result.Message, "alignment failed")
-	require.Contains(t, mockSync.bulkActions, "pause:"+newHash)
-	require.NotContains(t, mockSync.bulkActions, "recheck:"+newHash)
+	// The fallback adds the torrent paused, so the failed alignment needs no pause.
+	require.Empty(t, mockSync.bulkActions)
 }

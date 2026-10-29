@@ -22,6 +22,9 @@ type protectedPaths struct {
 	// normIgnorePaths are the folded keys every match compares against.
 	ignorePaths     []string
 	normIgnorePaths []string
+	// scanRoots are the run's roots, folded like the delete's scan root
+	// boundary compares them.
+	scanRoots []string
 }
 
 // newProtectedPaths validates and normalizes ignorePaths once. files can be nil.
@@ -35,6 +38,27 @@ func newProtectedPaths(d fsops.PathDialect, ignorePaths []string, files *Torrent
 		norm[i] = fsops.NormalizePath(d, p)
 	}
 	return &protectedPaths{d: d, files: files, ignorePaths: cleaned, normIgnorePaths: norm}, nil
+}
+
+// setScanRoots records the run's scan roots, so a walk from an outer root
+// treats a nested one as it treats its own.
+func (p *protectedPaths) setScanRoots(roots []string) {
+	p.scanRoots = make([]string, len(roots))
+	for i, root := range roots {
+		p.scanRoots[i] = fsops.NormalizePath(p.d, root)
+	}
+}
+
+// holdsScanRoot reports whether dir is one of the run's scan roots or holds
+// one.
+func (p *protectedPaths) holdsScanRoot(dir string) bool {
+	n := fsops.NormalizePath(p.d, dir)
+	for _, root := range p.scanRoots {
+		if root == n || isPathUnderNormalized(p.d, root, n) {
+			return true
+		}
+	}
+	return false
 }
 
 // torrentFile reports whether a torrent owns the file at path.
@@ -57,6 +81,21 @@ func (p *protectedPaths) ignored(path string) bool {
 		}
 	}
 	return false
+}
+
+// ignoredTorrentDirs returns the ignore paths that are or hold a torrent's
+// files. No walk enters an ignore path, so without a walk of its own a bind
+// mount alias of such a file elsewhere would be listed. Any other ignore path
+// is not walked, since ignored paths are often unmounted (#2483), and a
+// filesystem root already ignores every path, so nothing can be listed.
+func (p *protectedPaths) ignoredTorrentDirs() []string {
+	var dirs []string
+	for _, ignore := range p.ignorePaths {
+		if !isAbsoluteFilesystemRoot(p.d, ignore) && (p.torrentFile(ignore) || p.torrentFileIn(ignore)) {
+			dirs = append(dirs, ignore)
+		}
+	}
+	return dirs
 }
 
 // ignoredOrHoldsIgnored also protects a folder that holds an ignore path, so a

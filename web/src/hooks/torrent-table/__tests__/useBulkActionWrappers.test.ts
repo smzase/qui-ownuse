@@ -74,12 +74,11 @@ describe("useBulkActionWrappers — argument forwarding", () => {
   })
 
   it("exports with the select-all/sort context", () => {
-    const params = makeParams({ isAllSelected: true, effectiveSelectionCount: 42 })
+    const params = makeParams({ isAllSelected: true })
     const { result } = render(params)
     act(() => result.current.handleExportWrapper(["x"], [makeTorrent({ hash: "x" })]))
     expect(vi.mocked(params.exportTorrents)).toHaveBeenCalledWith(expect.objectContaining({
       isAllSelected: true,
-      totalSelected: 42,
       search: "query",
       sortField: "added_on",
       sortOrder: "desc",
@@ -154,6 +153,20 @@ describe("useBulkActionWrappers — delete (cross-seed aware)", () => {
     expect(vi.mocked(params.handleDelete)).toHaveBeenCalled()
   })
 
+  it("blocks no torrent on another instance that the delete keeps", async () => {
+    const params = makeParams({
+      shouldBlockCrossSeeds: true,
+      deleteCrossSeeds: false,
+      contextTorrents: [makeTorrent({ hash: "ctx0", tags: "cross-seed" })],
+      contextHashes: ["ctx0"],
+      crossSeedWarning: { affectedTorrents: [{ ...makeTorrent({ hash: "ctx0", tags: "cross-seed" }), instanceId: 2 } as never] },
+    })
+    const { result } = render(params)
+    await act(async () => { await result.current.handleDeleteWrapper() })
+    const targets = vi.mocked(params.blockCrossSeedHashes).mock.calls[0][1] ?? []
+    expect(targets.filter(target => target.instanceId === 2)).toEqual([])
+  })
+
   it("does not block when shouldBlockCrossSeeds is false", async () => {
     const params = makeParams({ shouldBlockCrossSeeds: false })
     const { result } = render(params)
@@ -162,16 +175,22 @@ describe("useBulkActionWrappers — delete (cross-seed aware)", () => {
     expect(vi.mocked(params.handleDelete)).toHaveBeenCalled()
   })
 
-  it("appends affected cross-seed hashes when deleteCrossSeeds is enabled", async () => {
+  it("passes the chosen cross-seeds to handleDelete as crossSeedTargets", async () => {
     const params = makeParams({
+      isAllSelected: true,
+      effectiveSelectionCount: 50,
       deleteCrossSeeds: true,
       contextHashes: ["ctx0"],
       crossSeedWarning: { affectedTorrents: [makeTorrent({ hash: "cs1" })] },
     })
     const { result } = render(params)
     await act(async () => { await result.current.handleDeleteWrapper() })
-    const hashes = vi.mocked(params.handleDelete).mock.calls[0][0]
-    expect(hashes).toEqual(["ctx0", "cs1"])
+
+    const call = vi.mocked(params.handleDelete).mock.calls[0]
+    expect(call[0]).toEqual(["ctx0"])
+    expect(call[1]).toBe(true)
+    expect(call[5]?.totalSelected).toBe(50)
+    expect(call[5]?.crossSeedTargets).toEqual([{ instanceId: 1, hash: "cs1" }])
   })
 })
 

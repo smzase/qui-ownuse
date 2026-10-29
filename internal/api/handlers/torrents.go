@@ -27,6 +27,7 @@ import (
 
 	"github.com/autobrr/qui/internal/models"
 	"github.com/autobrr/qui/internal/qbittorrent"
+	"github.com/autobrr/qui/internal/services/crossseed"
 	"github.com/autobrr/qui/internal/services/jackett"
 	"github.com/autobrr/qui/pkg/redact"
 	"github.com/autobrr/qui/pkg/torrentname"
@@ -43,6 +44,10 @@ type torrentDownloader interface {
 	DownloadTorrent(ctx context.Context, req jackett.TorrentDownloadRequest) ([]byte, error)
 }
 
+type deleteMatchFinder interface {
+	FindDeleteMatches(ctx context.Context, selection map[int][]string) (*crossseed.DeleteMatchesResponse, error)
+}
+
 type torrentContentResolver interface {
 	GetTorrentFiles(ctx context.Context, instanceID int, hash string) (*qbt.TorrentFiles, error)
 	GetTorrentProperties(ctx context.Context, instanceID int, hash string) (*qbt.TorrentProperties, error)
@@ -57,6 +62,7 @@ type TorrentsHandler struct {
 	torrentDownloader torrentDownloader // nil when no indexer service is configured
 	contentResolver   torrentContentResolver
 	archiveExporter   torrentArchiveExporter
+	deleteMatches     deleteMatchFinder
 }
 
 var errInstanceAccessDenied = errors.New("instance access denied")
@@ -135,13 +141,14 @@ type SortedPeersResponse struct {
 	SortedPeers []SortedPeer `json:"sorted_peers,omitempty"`
 }
 
-func NewTorrentsHandler(syncManager *qbittorrent.SyncManager, jackettService *jackett.Service, instanceStore *models.InstanceStore) *TorrentsHandler {
+func NewTorrentsHandler(syncManager *qbittorrent.SyncManager, jackettService *jackett.Service, instanceStore *models.InstanceStore, crossSeedService *crossseed.Service) *TorrentsHandler {
 	h := &TorrentsHandler{
 		syncManager:     syncManager,
 		instanceStore:   instanceStore,
 		torrentAdder:    syncManager,
 		contentResolver: syncManager,
 		archiveExporter: syncManager,
+		deleteMatches:   crossSeedService,
 	}
 	if jackettService != nil {
 		h.torrentDownloader = jackettService
@@ -1337,52 +1344,12 @@ func (h *TorrentsHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 	}
 	req.InstanceIDs = normalizedInstanceIDs
 
-	if instanceID == allInstancesID {
-		scopedInstanceIDs, scopeErr := h.scopeInstanceIDs(r, req.InstanceIDs)
-		if scopeErr != nil {
-			if errors.Is(scopeErr, errInstanceAccessDenied) {
-				RespondError(w, http.StatusNotFound, "Instance not found")
-			} else {
-				RespondError(w, http.StatusInternalServerError, "Failed to authorize instances")
-			}
-			return
-		}
-		req.InstanceIDs = scopedInstanceIDs
-		targetIDs := make([]int, 0, len(req.Targets)+len(req.ExcludeTargets))
-		for _, target := range req.Targets {
-			if target.InstanceID > 0 {
-				targetIDs = append(targetIDs, target.InstanceID)
-			}
-		}
-		for _, target := range req.ExcludeTargets {
-			if target.InstanceID > 0 {
-				targetIDs = append(targetIDs, target.InstanceID)
-			}
-		}
-		if _, scopeErr = h.scopeInstanceIDs(r, targetIDs); scopeErr != nil {
-			if errors.Is(scopeErr, errInstanceAccessDenied) {
-				RespondError(w, http.StatusNotFound, "Instance not found")
-			} else {
-				RespondError(w, http.StatusInternalServerError, "Failed to authorize instances")
-			}
-			return
-		}
-	}
-
-	// Validate input - either specific hashes/targets or selectAll mode
-	if !req.SelectAll && len(req.Hashes) == 0 && len(req.Targets) == 0 {
-		RespondError(w, http.StatusBadRequest, "No torrents selected")
+	if !h.authorizeTorrentSelection(w, r, instanceID, &req) {
 		return
 	}
 
-	if req.SelectAll && (len(req.Hashes) > 0 || len(req.Targets) > 0) {
-		RespondError(w, http.StatusBadRequest, "Cannot specify hashes/targets together with selectAll")
-		return
-	}
-
-	// A hash names a torrent, not an instance. In the unified scope only targets can.
-	if instanceID == allInstancesID && len(req.Hashes) > 0 && len(req.Targets) == 0 {
-		RespondError(w, http.StatusBadRequest, "targets is required when addressing torrents by hash in the unified scope")
+	if message := torrentSelectionError(instanceID, req); message != "" {
+		RespondError(w, http.StatusBadRequest, message)
 		return
 	}
 
@@ -1406,44 +1373,8 @@ func (h *TorrentsHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var targetsByInstance map[int][]string
-	if req.SelectAll {
-		targetsByInstance = make(map[int][]string)
-		if req.Filters == nil {
-			req.Filters = &qbittorrent.FilterOptions{}
-		}
-
-		torrents, selectErr := h.selectAllTorrents(r.Context(), instanceID, "added_on", "desc", req.Search, *req.Filters, req.InstanceIDs, req.ExcludeHashes, req.ExcludeTargets)
-		if selectErr != nil {
-			if instanceID != allInstancesID && respondIfInstanceDisabled(w, selectErr, instanceID, "torrents:selectAll") {
-				return
-			}
-			if errors.Is(selectErr, errPartialResults) {
-				log.Warn().Str("action", req.Action).Ints("instanceIDs", req.InstanceIDs).Msg("SelectAll bulk action aborted due to partial results")
-				RespondError(w, http.StatusServiceUnavailable, "Unable to resolve all scoped instances for bulk action")
-				return
-			}
-			log.Error().Err(selectErr).Int("instanceID", instanceID).Msg("Failed to get torrents for selectAll operation")
-			RespondError(w, http.StatusInternalServerError, "Failed to get torrents for bulk action")
-			return
-		}
-
-		// selectAllTorrents already dropped the excluded torrents.
-		appendTargetsFromCrossInstanceTorrents(targetsByInstance, make(map[int]map[string]struct{}), torrents, nil, nil)
-
-		log.Debug().
-			Int("instanceID", instanceID).
-			Int("targetCount", len(torrents)).
-			Int("excludedHashes", len(req.ExcludeHashes)).
-			Int("excludedTargets", len(req.ExcludeTargets)).
-			Str("action", req.Action).
-			Msg("SelectAll bulk action")
-	} else {
-		targetsByInstance = explicitTargets(instanceID, req.Targets, req.Hashes)
-	}
-
-	if len(targetsByInstance) == 0 {
-		RespondError(w, http.StatusBadRequest, "No torrents match the selection criteria")
+	targetsByInstance, ok := h.resolveTorrentSelection(w, r, instanceID, req)
+	if !ok {
 		return
 	}
 
@@ -1487,6 +1418,169 @@ func (h *TorrentsHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 	RespondJSON(w, http.StatusOK, map[string]string{
 		"message": "Bulk action completed successfully",
 	})
+}
+
+// torrentSelectionError returns the response message for a request that does
+// not name its torrents with explicit hashes or targets, or with selectAll, or
+// that names them both ways. It returns "" for a valid selection.
+func torrentSelectionError(instanceID int, req BulkActionRequest) string {
+	if !req.SelectAll && len(req.Hashes) == 0 && len(req.Targets) == 0 {
+		return "No torrents selected"
+	}
+	if req.SelectAll && (len(req.Hashes) > 0 || len(req.Targets) > 0) {
+		return "Cannot specify hashes/targets together with selectAll"
+	}
+	// A hash names a torrent, not an instance. In the unified scope only targets can.
+	if instanceID == allInstancesID && len(req.Hashes) > 0 && len(req.Targets) == 0 {
+		return "targets is required when addressing torrents by hash in the unified scope"
+	}
+	return ""
+}
+
+// resolveTorrentSelection returns the hashes of the selected torrents per
+// instance. When it returns false, it has written the error response.
+func (h *TorrentsHandler) resolveTorrentSelection(w http.ResponseWriter, r *http.Request, instanceID int, req BulkActionRequest) (map[int][]string, bool) {
+	var targetsByInstance map[int][]string
+	if req.SelectAll {
+		targetsByInstance = make(map[int][]string)
+		if req.Filters == nil {
+			req.Filters = &qbittorrent.FilterOptions{}
+		}
+
+		torrents, selectErr := h.selectAllTorrents(r.Context(), instanceID, "added_on", "desc", req.Search, *req.Filters, req.InstanceIDs, req.ExcludeHashes, req.ExcludeTargets)
+		if selectErr != nil {
+			if instanceID != allInstancesID && respondIfInstanceDisabled(w, selectErr, instanceID, "torrents:selectAll") {
+				return nil, false
+			}
+			if errors.Is(selectErr, errPartialResults) {
+				log.Warn().Str("action", req.Action).Ints("instanceIDs", req.InstanceIDs).Msg("SelectAll bulk action aborted due to partial results")
+				RespondError(w, http.StatusServiceUnavailable, "Unable to resolve all scoped instances for bulk action")
+				return nil, false
+			}
+			log.Error().Err(selectErr).Int("instanceID", instanceID).Msg("Failed to get torrents for selectAll operation")
+			RespondError(w, http.StatusInternalServerError, "Failed to get torrents for bulk action")
+			return nil, false
+		}
+
+		// selectAllTorrents already dropped the excluded torrents.
+		appendTargetsFromCrossInstanceTorrents(targetsByInstance, make(map[int]map[string]struct{}), torrents, nil, nil)
+
+		log.Debug().
+			Int("instanceID", instanceID).
+			Int("targetCount", len(torrents)).
+			Int("excludedHashes", len(req.ExcludeHashes)).
+			Int("excludedTargets", len(req.ExcludeTargets)).
+			Str("action", req.Action).
+			Msg("SelectAll bulk action")
+	} else {
+		targetsByInstance = explicitTargets(instanceID, req.Targets, req.Hashes)
+	}
+
+	if len(targetsByInstance) == 0 {
+		RespondError(w, http.StatusBadRequest, "No torrents match the selection criteria")
+		return nil, false
+	}
+
+	return targetsByInstance, true
+}
+
+func (h *TorrentsHandler) authorizeTorrentSelection(w http.ResponseWriter, r *http.Request, instanceID int, req *BulkActionRequest) bool {
+	if instanceID == allInstancesID {
+		scopedInstanceIDs, scopeErr := h.scopeInstanceIDs(r, req.InstanceIDs)
+		if scopeErr != nil {
+			if errors.Is(scopeErr, errInstanceAccessDenied) {
+				RespondError(w, http.StatusNotFound, "Instance not found")
+			} else {
+				RespondError(w, http.StatusInternalServerError, "Failed to authorize instances")
+			}
+			return false
+		}
+		req.InstanceIDs = scopedInstanceIDs
+		targetIDs := make([]int, 0, len(req.Targets)+len(req.ExcludeTargets))
+		for _, target := range req.Targets {
+			if target.InstanceID > 0 {
+				targetIDs = append(targetIDs, target.InstanceID)
+			}
+		}
+		for _, target := range req.ExcludeTargets {
+			if target.InstanceID > 0 {
+				targetIDs = append(targetIDs, target.InstanceID)
+			}
+		}
+		if _, scopeErr = h.scopeInstanceIDs(r, targetIDs); scopeErr != nil {
+			if errors.Is(scopeErr, errInstanceAccessDenied) {
+				RespondError(w, http.StatusNotFound, "Instance not found")
+			} else {
+				RespondError(w, http.StatusInternalServerError, "Failed to authorize instances")
+			}
+			return false
+		}
+	}
+
+	return true
+}
+
+// GetDeleteCrossSeeds returns the torrents that a delete of the selected
+// torrents with their files affects. It takes the selection of a bulk action,
+// so a select-all delete checks every selected torrent in one request.
+func (h *TorrentsHandler) GetDeleteCrossSeeds(w http.ResponseWriter, r *http.Request) {
+	instanceID, err := strconv.Atoi(chi.URLParam(r, "instanceID"))
+	if err != nil {
+		RespondError(w, http.StatusBadRequest, "Invalid instance ID")
+		return
+	}
+
+	var req BulkActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		RespondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	normalizedInstanceIDs, instanceIDsErr := normalizeInstanceIDs(req.InstanceIDs)
+	if instanceIDsErr != nil {
+		RespondError(w, http.StatusBadRequest, instanceIDsErr.Error())
+		return
+	}
+	req.InstanceIDs = normalizedInstanceIDs
+	if !h.authorizeTorrentSelection(w, r, instanceID, &req) {
+		return
+	}
+
+	if message := torrentSelectionError(instanceID, req); message != "" {
+		RespondError(w, http.StatusBadRequest, message)
+		return
+	}
+
+	targetsByInstance, ok := h.resolveTorrentSelection(w, r, instanceID, req)
+	if !ok {
+		return
+	}
+
+	response, findErr := h.deleteMatches.FindDeleteMatches(r.Context(), targetsByInstance)
+	if findErr != nil {
+		// The dialog closed and the browser cancelled the request.
+		if r.Context().Err() != nil {
+			return
+		}
+		log.Error().Err(findErr).Int("instanceID", instanceID).Msg("Failed to check cross-seeds for delete")
+		RespondError(w, mapCrossSeedErrorStatus(findErr), findErr.Error())
+		return
+	}
+
+	if !isAdmin(r) && h.instanceStore != nil {
+		instances, err := h.instanceStore.ListForUser(r.Context(), currentUserID(r), false)
+		if err != nil {
+			RespondError(w, http.StatusInternalServerError, "Failed to authorize cross-seed matches")
+			return
+		}
+		visible := make(map[int]bool, len(instances))
+		for _, instance := range instances {
+			visible[instance.ID] = true
+		}
+		response.Matches = slices.DeleteFunc(response.Matches, func(match crossseed.LocalMatch) bool { return !visible[match.InstanceID] })
+		response.Unchecked = slices.DeleteFunc(response.Unchecked, func(instance crossseed.UncheckedInstance) bool { return !visible[instance.InstanceID] })
+	}
+
+	RespondJSON(w, http.StatusOK, response)
 }
 
 func flattenTargetHashes(targetsByInstance map[int][]string) []string {
@@ -2726,28 +2820,9 @@ func (h *TorrentsHandler) ListCrossInstanceTorrents(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if currentUserID(r) > 0 {
-		visible, listErr := h.instanceStore.ListForUser(r.Context(), currentUserID(r), isAdmin(r))
-		if listErr != nil {
-			RespondError(w, http.StatusInternalServerError, "Failed to authorize instances")
-			return
-		}
-		allowed := make(map[int]struct{}, len(visible))
-		for _, instance := range visible {
-			allowed[instance.ID] = struct{}{}
-		}
-		if len(instanceIDs) == 0 {
-			for id := range allowed {
-				instanceIDs = append(instanceIDs, id)
-			}
-		} else {
-			for _, id := range instanceIDs {
-				if _, ok := allowed[id]; !ok {
-					RespondError(w, http.StatusNotFound, "Instance not found")
-					return
-				}
-			}
-		}
+	instanceIDs, ok := h.authorizeCrossInstanceList(w, r, instanceIDs)
+	if !ok {
+		return
 	}
 
 	// Parse filters
@@ -2788,9 +2863,10 @@ func (h *TorrentsHandler) ListCrossInstanceTorrents(w http.ResponseWriter, r *ht
 	// Calculate offset from page
 	offset := page * limit
 
-	// Get torrents from all instances with the filter expression
+	// A poll stands in for the stream, so it starts background syncs. The
+	// stream itself reads this function with WithSkipFreshData.
 	response, err := h.syncManager.GetCrossInstanceTorrentsWithFilters(
-		qbittorrent.WithSkipFreshData(r.Context()),
+		r.Context(),
 		limit,
 		offset,
 		sort,
@@ -2810,6 +2886,34 @@ func (h *TorrentsHandler) ListCrossInstanceTorrents(w http.ResponseWriter, r *ht
 	}
 
 	RespondJSON(w, http.StatusOK, response)
+}
+
+func (h *TorrentsHandler) authorizeCrossInstanceList(w http.ResponseWriter, r *http.Request, instanceIDs []int) ([]int, bool) {
+	if currentUserID(r) > 0 {
+		visible, listErr := h.instanceStore.ListForUser(r.Context(), currentUserID(r), isAdmin(r))
+		if listErr != nil {
+			RespondError(w, http.StatusInternalServerError, "Failed to authorize instances")
+			return nil, false
+		}
+		allowed := make(map[int]struct{}, len(visible))
+		for _, instance := range visible {
+			allowed[instance.ID] = struct{}{}
+		}
+		if len(instanceIDs) == 0 {
+			for id := range allowed {
+				instanceIDs = append(instanceIDs, id)
+			}
+		} else {
+			for _, id := range instanceIDs {
+				if _, ok := allowed[id]; !ok {
+					RespondError(w, http.StatusNotFound, "Instance not found")
+					return nil, false
+				}
+			}
+		}
+	}
+
+	return instanceIDs, true
 }
 
 func (h *TorrentsHandler) GetDirectoryContent(w http.ResponseWriter, r *http.Request) {

@@ -373,7 +373,8 @@ func (s *Server) Handler() (*chi.Mux, error) {
 	}
 	instancesHandler := handlers.NewInstancesHandler(s.instanceStore, s.instanceReannounce, s.reannounceCache, s.clientPool, s.syncManager, s.reannounceService, sshpool.NewDialer(s.instanceStore), s.sshPool)
 	managedUsersHandler := handlers.NewManagedUsersHandler(s.authService)
-	torrentsHandler := handlers.NewTorrentsHandler(s.syncManager, s.jackettService, s.instanceStore)
+	instancesHandler.SetOrphanScan(s.orphanScanService)
+	torrentsHandler := handlers.NewTorrentsHandler(s.syncManager, s.jackettService, s.instanceStore, s.crossSeedService)
 	preferencesHandler := handlers.NewPreferencesHandler(s.syncManager)
 	clientAPIKeysHandler := handlers.NewClientAPIKeysHandler(s.clientAPIKeyStore, s.instanceStore, s.config.Config.BaseURL)
 	externalProgramsHandler := handlers.NewExternalProgramsHandler(s.externalProgramStore, s.externalProgramService, s.clientPool, s.automationStore, s.instanceStore)
@@ -494,6 +495,7 @@ func (s *Server) Handler() (*chi.Mux, error) {
 			r.Use(middleware.PopulateUserContext(s.authService, s.config.Config))
 
 			r.Get("/tracker-icons", trackerIconHandler.GetTrackerIcons)
+			r.Post("/stream/subscriptions", s.streamManager.ChangeSubscriptions)
 
 			// Auth routes
 			r.Post("/auth/logout", authHandler.Logout)
@@ -656,6 +658,7 @@ func (s *Server) Handler() (*chi.Mux, error) {
 						r.Post("/refresh", torrentsHandler.RefreshTorrents)
 						r.Post("/check-duplicates", torrentsHandler.CheckDuplicates)
 						r.Post("/bulk-action", torrentsHandler.BulkAction)
+						r.Post("/delete-cross-seeds", torrentsHandler.GetDeleteCrossSeeds)
 						r.Post("/add-peers", torrentsHandler.AddPeers)
 						r.Post("/ban-peers", torrentsHandler.BanPeers)
 						r.Post("/field", torrentsHandler.GetTorrentField)

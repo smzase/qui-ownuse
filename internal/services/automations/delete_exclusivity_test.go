@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	qbt "github.com/autobrr/go-qbittorrent"
 	"github.com/stretchr/testify/require"
 
 	"github.com/autobrr/qui/internal/fsops"
@@ -31,6 +32,8 @@ type writeStub struct {
 
 	mu     sync.Mutex
 	hashes map[string][]string
+	// filesDeleted holds the hashes of each delete that also removed the files.
+	filesDeleted []string
 }
 
 // writeStubActions maps the write endpoints these tests read to the action they belong to.
@@ -68,6 +71,9 @@ func (s *writeStub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if action, ok := writeStubActions[strings.TrimPrefix(r.URL.Path, "/api/v2/")]; ok {
 			s.mu.Lock()
 			s.hashes[action] = append(s.hashes[action], strings.Split(r.Form.Get("hashes"), "|")...)
+			if action == "delete" && r.Form.Get("deleteFiles") == "true" {
+				s.filesDeleted = append(s.filesDeleted, strings.Split(r.Form.Get("hashes"), "|")...)
+			}
 			s.mu.Unlock()
 		}
 		_, _ = w.Write([]byte("Ok."))
@@ -125,15 +131,25 @@ func newWriteStubService(t *testing.T, torrents []stubTorrent) (*Service, int, *
 	t.Cleanup(func() { _ = clientPool.Close() })
 	syncManager := qbittorrent.NewSyncManager(clientPool, nil)
 
-	svc := NewService(Config{ApplyTimeout: DefaultConfig().ApplyTimeout}, instanceStore, nil, models.NewAutomationActivityStore(db), nil, syncManager, nil, nil, sharedFilesMatcher{sharing}, fsops.NewPool(instanceStore, localbackend.NewBackend()))
+	svc := NewService(Config{ApplyTimeout: DefaultConfig().ApplyTimeout}, instanceStore, nil, models.NewAutomationActivityStore(db), nil, syncManager, nil, nil, sharedFilesMatcher{sharing: sharing}, fsops.NewPool(instanceStore, localbackend.NewBackend()))
 	return svc, instance.ID, stub
 }
 
 // sharedFilesMatcher reports which stub torrents share files, as the cross-seed service does.
-type sharedFilesMatcher struct{ sharing map[string][]string }
+// otherShared, otherUnknown, and offline are the result of the check on other instances.
+type sharedFilesMatcher struct {
+	sharing                   map[string][]string
+	otherShared, otherUnknown map[string]struct{}
+	offline                   []string
+}
 
 func (m sharedFilesMatcher) BuildCrossMatchSets(context.Context, int, CrossMatchNeeds) *CrossMatchResult {
-	return &CrossMatchResult{SameInstanceContentByHash: m.sharing}
+	return &CrossMatchResult{
+		SameInstanceContentByHash:  m.sharing,
+		OtherInstanceShared:        m.otherShared,
+		OtherInstanceSharedUnknown: m.otherUnknown,
+		OfflineLocalInstances:      m.offline,
+	}
 }
 
 // dryRunActivityHashes returns the torrents each dry-run activity row lists, keyed like writeStubActions.
@@ -222,6 +238,11 @@ func TestApplyRules_TorrentTheRunDeletesGetsNoOtherAction(t *testing.T) {
 		Conditions: &models.ActionConditions{Tags: []*models.TagAction{{Enabled: true, Tags: []string{"seen"}, Mode: "add", Condition: tagsContain("del")}}},
 	}
 
+	tagCrossSeedsRule := &models.Automation{
+		ID: 2, Name: "tag", TrackerPattern: "*", Enabled: true, SortOrder: 2,
+		Conditions: &models.ActionConditions{Tags: []*models.TagAction{{Enabled: true, Tags: []string{"seen"}, Mode: "add", IncludeCrossSeeds: true, Condition: tagsContain("del")}}},
+	}
+
 	tests := []struct {
 		name     string
 		torrents []stubTorrent
@@ -258,6 +279,12 @@ func TestApplyRules_TorrentTheRunDeletesGetsNoOtherAction(t *testing.T) {
 			torrents: crossSeeds("del,mv"),
 			rules:    []*models.Automation{deleteRule(DeleteModeKeepFiles, tagsContain("del")), categoryRule(false, GroupCrossSeedContentSavePath)},
 			want:     map[string][]string{"category": {y}, "delete": {x}},
+		},
+		{
+			name:     "a deleted torrent does not pass its tag to its cross-seed",
+			torrents: crossSeeds("del"),
+			rules:    []*models.Automation{deleteRule(DeleteModeKeepFiles, tagsContain("del")), tagCrossSeedsRule},
+			want:     map[string][]string{"delete": {x}},
 		},
 		{
 			name:     "a cross-seed pulled into the delete gets none of its own actions",
@@ -307,4 +334,41 @@ func TestApplyRules_TorrentTheRunDeletesGetsNoOtherAction(t *testing.T) {
 			require.Empty(t, stub.writes())
 		})
 	}
+}
+
+// deadlineReader records whether each file read carries a deadline.
+type deadlineReader struct {
+	filesReader
+
+	mu        sync.Mutex
+	reads     int
+	unbounded int
+}
+
+func (r *deadlineReader) GetTorrentFilesBatch(ctx context.Context, instanceID int, hashes []string) (map[string]qbt.TorrentFiles, error) {
+	r.mu.Lock()
+	r.reads++
+	if _, ok := ctx.Deadline(); !ok {
+		r.unbounded++
+	}
+	r.mu.Unlock()
+	return r.filesReader.GetTorrentFilesBatch(ctx, instanceID, hashes)
+}
+
+// The file reads of the overlap check in a live run stop at the apply timeout.
+func TestApplyRules_OverlapCheckReadsStopAtTheApplyTimeout(t *testing.T) {
+	const name = "Example.Show.S01E01.1080p.WEB-DL-GRP"
+	svc, instanceID, stub := newWriteStubService(t, []stubTorrent{
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", name, "mv", ""},
+		{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", name, "mv", ""},
+	})
+	// A content path that is the save path makes the group ambiguous, so the plan reads file lists.
+	stub.torrents = strings.ReplaceAll(stub.torrents, `"content_path":"/data/old/`+name+`.mkv"`, `"content_path":"/data/old"`)
+	reader := &deadlineReader{filesReader: svc.filesReader}
+	svc.filesReader = reader
+
+	_, err := svc.applyRulesForInstance(t.Context(), instanceID, true, []*models.Automation{moveRule(GroupCrossSeedContentPath)}, false)
+	require.NoError(t, err)
+	require.Positive(t, reader.reads)
+	require.Zero(t, reader.unbounded)
 }

@@ -27,6 +27,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -129,7 +130,7 @@ func lint() (counts, error) {
 		if got[issue.FromLinter] == nil {
 			got[issue.FromLinter] = map[string]int{}
 		}
-		got[issue.FromLinter][issue.Pos.Filename]++
+		got[issue.FromLinter][filepath.ToSlash(issue.Pos.Filename)]++
 	}
 	return got, nil
 }

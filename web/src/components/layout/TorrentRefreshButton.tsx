@@ -6,7 +6,7 @@
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSyncStreamManager } from "@/contexts/SyncStreamContext"
-import { useTorrentSelection } from "@/contexts/TorrentSelectionContext"
+import { useTorrentSelectionContext } from "@/contexts/TorrentSelectionContext"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useQueryClient } from "@tanstack/react-query"
@@ -22,7 +22,7 @@ export function TorrentRefreshButton({ instanceIds, onRefresh }: {
   const { t } = useTranslation("common")
   const queryClient = useQueryClient()
   const { resetInstanceStreams } = useSyncStreamManager()
-  const { clearSelection } = useTorrentSelection()
+  const { dispatch: dispatchSelection } = useTorrentSelectionContext()
   const [refreshing, setRefreshing] = useState(false)
   const requestRef = useRef<AbortController | null>(null)
 
@@ -51,7 +51,7 @@ export function TorrentRefreshButton({ instanceIds, onRefresh }: {
       if (controller.signal.aborted) return
       resetInstanceStreams(instanceIds)
       queryClient.removeQueries(listQueries)
-      clearSelection()
+      dispatchSelection({ type: "clear" })
       onRefresh()
       toast.success(t("header.forceRefreshSuccess"))
     } catch {

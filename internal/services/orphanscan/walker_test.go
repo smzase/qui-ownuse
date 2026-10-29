@@ -17,6 +17,8 @@ import (
 
 	"github.com/autobrr/qui/internal/fsops"
 	"github.com/autobrr/qui/internal/fsops/local"
+	"github.com/autobrr/qui/internal/models"
+	"github.com/autobrr/qui/pkg/hardlink"
 )
 
 const orphanFileName = "orphan.txt"
@@ -323,6 +325,124 @@ func TestWalkScanRoot_DiscUnitUsesParentWhenSiblingContentNotInUse(t *testing.T)
 	}
 	if filepath.Clean(orphans[0].Path) != filepath.Clean(movieDir) {
 		t.Fatalf("expected orphan unit path %q, got %q", movieDir, orphans[0].Path)
+	}
+}
+
+// A nested scan root is walked inside the outer one, so it is never the disc
+// unit: its delete would be refused, and the loose orphans in it would go
+// unlisted. The result matches a walk of the nested root on its own.
+func TestWalkScanRoot_NestedScanRootIsNeverADiscUnit(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		nested []string // relative to the walked root
+		ignore string   // relative to the walked root, "" for none
+		want   []string
+	}{
+		{name: "nested scan root", nested: []string{"Movie.2024"}, want: []string{"Movie.2024/BDMV", "Movie.2024/readme.txt"}},
+		{name: "nested scan root in another case", nested: []string{"MOVIE.2024"}, want: []string{"Movie.2024/BDMV", "Movie.2024/readme.txt"}},
+		{name: "ignored content in the marker", nested: []string{"Movie.2024"}, ignore: "Movie.2024/BDMV/keep", want: []string{
+			"Movie.2024/BDMV/STREAM/00000.m2ts", "Movie.2024/BDMV/index.bdmv", "Movie.2024/readme.txt",
+		}},
+		{name: "marker that is a scan root below another", nested: []string{"Movie.2024", "Movie.2024/BDMV"}, want: []string{
+			"Movie.2024/BDMV/STREAM/00000.m2ts", "Movie.2024/BDMV/index.bdmv", "Movie.2024/readme.txt",
+		}},
+		{name: "marker that is a scan root", nested: []string{"Movie.2024/BDMV"}, want: []string{
+			"Movie.2024/BDMV/STREAM/00000.m2ts", "Movie.2024/BDMV/index.bdmv", "Movie.2024/readme.txt",
+		}},
+		{name: "scan root inside the marker", nested: []string{"Movie.2024/BDMV/STREAM"}, want: []string{
+			"Movie.2024/BDMV/STREAM/00000.m2ts", "Movie.2024/BDMV/index.bdmv", "Movie.2024/readme.txt",
+		}},
+		{name: "scan root beside the marker", nested: []string{"Movie.2024/Extras"}, want: []string{
+			"Movie.2024/BDMV", "Movie.2024/Extras/extra.mkv", "Movie.2024/readme.txt",
+		}},
+		{name: "ordinary folder", want: []string{"Movie.2024"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			movieDir := filepath.Join(root, "Movie.2024")
+			if slices.Contains(tc.nested, "Movie.2024/Extras") {
+				writeOldFile(t, filepath.Join(movieDir, "Extras", "extra.mkv"))
+			}
+			writeOldFile(t, filepath.Join(movieDir, "BDMV", "index.bdmv"))
+			writeOldFile(t, filepath.Join(movieDir, "BDMV", "STREAM", "00000.m2ts"))
+			writeOldFile(t, filepath.Join(movieDir, "readme.txt"))
+
+			var ignore []string
+			if tc.ignore != "" {
+				ignore = []string{filepath.Join(root, filepath.FromSlash(tc.ignore))}
+				writeOldFile(t, filepath.Join(ignore[0], "keep.txt"))
+			}
+			protected := newTestProtected(t, fsops.HostPaths, ignore, NewTorrentFileMap(fsops.HostPaths))
+			roots := []string{root}
+			for _, nested := range tc.nested {
+				roots = append(roots, filepath.Join(root, filepath.FromSlash(nested)))
+			}
+			protected.setScanRoots(roots)
+			orphans, _, err := walkScanRoot(t.Context(), root, protected, 0, 100, local.NewBackend(), nil)
+			if err != nil {
+				t.Fatalf("walkScanRoot: %v", err)
+			}
+			got := make([]string, 0, len(orphans))
+			for _, o := range orphans {
+				rel, err := filepath.Rel(root, o.Path)
+				if err != nil {
+					t.Fatalf("rel: %v", err)
+				}
+				got = append(got, filepath.ToSlash(rel))
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("orphans = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// The scan root answer is remembered per folder, so two discs in one walk get
+// their own answers in either order.
+func TestWalkScanRoot_ScanRootAnswerIsPerFolder(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		nested string
+		want   []string
+	}{
+		{name: "nested root first", nested: "A.Movie", want: []string{"A.Movie/BDMV", "A.Movie/readme.txt", "B.Movie"}},
+		{name: "ordinary folder first", nested: "B.Movie", want: []string{"A.Movie", "B.Movie/BDMV", "B.Movie/readme.txt"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			for _, movie := range []string{"A.Movie", "B.Movie"} {
+				writeOldFile(t, filepath.Join(root, movie, "BDMV", "index.bdmv"))
+				writeOldFile(t, filepath.Join(root, movie, "BDMV", "STREAM", "00000.m2ts"))
+				writeOldFile(t, filepath.Join(root, movie, "readme.txt"))
+			}
+			protected := newTestProtected(t, fsops.HostPaths, nil, NewTorrentFileMap(fsops.HostPaths))
+			protected.setScanRoots([]string{root, filepath.Join(root, tc.nested)})
+			orphans, _, err := walkScanRoot(t.Context(), root, protected, 0, 100, local.NewBackend(), nil)
+			if err != nil {
+				t.Fatalf("walkScanRoot: %v", err)
+			}
+			got := make([]string, 0, len(orphans))
+			for _, o := range orphans {
+				rel, err := filepath.Rel(root, o.Path)
+				if err != nil {
+					t.Fatalf("rel: %v", err)
+				}
+				got = append(got, filepath.ToSlash(rel))
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("orphans = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -1037,4 +1157,69 @@ func TestWalkScanRoot_NestedDiscFoldsIntoOutermostDiscUnit(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A regular file without a key can hide a second path to a torrent's file, at
+// the in-use site as much as at the orphan site, so either one marks the run's
+// identity incomplete (#3236).
+func TestScanWalker_FileWithoutAKeyMarksIdentityIncomplete(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	inUse := filepath.Join(root, "in-use.mkv")
+	orphan := filepath.Join(root, "orphan.mkv")
+	ignored := filepath.Join(root, "ignored", "file.mkv")
+	instance := &models.Instance{ID: 1, SSHHost: "box.example", SSHPort: 22}
+	old := time.Now().Add(-time.Hour)
+	file := func(path string, id byte) fsops.WalkEntry {
+		entry := fsops.WalkEntry{Path: path, Size: 1, ModTime: old, Nlinks: 1}
+		if id != 0 {
+			entry.FileID = hardlink.RemoteFileID([]byte{id})
+		}
+		return entry
+	}
+	dir := fsops.WalkEntry{Path: filepath.Join(root, "sub"), IsDir: true, Mode: fs.ModeDir, ModTime: old}
+
+	for _, tc := range []struct {
+		name           string
+		entries        []fsops.WalkEntry
+		wantIncomplete bool
+	}{
+		{"every file keyed", []fsops.WalkEntry{dir, file(inUse, 1), file(orphan, 2)}, false},
+		{"in-use file without a key", []fsops.WalkEntry{file(inUse, 0), file(orphan, 2)}, true},
+		{"orphan without a key", []fsops.WalkEntry{file(inUse, 1), file(orphan, 0)}, true},
+		{"ignored file without a key is never listed", []fsops.WalkEntry{file(inUse, 1), file(ignored, 0)}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			tfm := NewTorrentFileMap(fsops.HostPaths)
+			tfm.Add(inUse)
+			protected := newTestProtected(t, fsops.HostPaths, []string{filepath.Join(root, "ignored")}, tfm)
+			keys := newFileKeys()
+			backend := &fakeWalkBackend{Backend: local.NewBackend(), entries: tc.entries}
+			if _, _, _, err := walkScanRootWithUnitFilter(t.Context(), root, protected, 0, 0, nil, backend, instance, false, keys); err != nil {
+				t.Fatalf("walk: %v", err)
+			}
+			if keys.incomplete != tc.wantIncomplete {
+				t.Fatalf("incomplete = %v, want %v", keys.incomplete, tc.wantIncomplete)
+			}
+		})
+	}
+
+	t.Run("symlinked save path with a torrent file it cannot key", func(t *testing.T) {
+		t.Parallel()
+
+		tfm := NewTorrentFileMap(fsops.HostPaths)
+		tfm.Add(inUse)
+		keys := newFileKeys()
+		backend := &fakeWalkBackend{Backend: local.NewBackend(), entries: []fsops.WalkEntry{file(inUse, 0)}}
+		// Without Identity the row reports no FileIDErr to fail on, as over sftp.
+		if err := recordInUse(t.Context(), root, newTestProtected(t, fsops.HostPaths, nil, tfm), backend, instance, keys); err != nil {
+			t.Fatalf("recordInUse: %v", err)
+		}
+		if !keys.incomplete {
+			t.Fatal("a torrent file recordInUse cannot key must mark identity incomplete")
+		}
+	})
 }

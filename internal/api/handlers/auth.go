@@ -632,7 +632,7 @@ func (h *AuthHandler) AddSwitchUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.startSession(r.Context(), user, true)
-		go h.warmSession(context.Background(), user.ID, user.Role == models.UserRoleAdmin) //nolint:gosec // session warm-up must outlive the request
+		go h.warmSession(context.Background(), user.ID, user.Role == models.UserRoleAdmin) //nolint:gosec,contextcheck // session warm-up must outlive the request
 	}
 
 	RespondJSON(w, http.StatusOK, authUserResponse(user))

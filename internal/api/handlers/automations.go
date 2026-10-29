@@ -336,52 +336,60 @@ func (h *AutomationHandler) decodeAndCheckPayload(r *http.Request, instanceID in
 		return nil, http.StatusBadRequest, err.Error()
 	}
 
+	if status, message := h.checkAutomationReferences(ctx, payload); status != 0 {
+		return nil, status, message
+	}
+
+	return payload, 0, ""
+}
+
+func (h *AutomationHandler) checkAutomationReferences(ctx context.Context, payload *AutomationPayload) (int, string) {
 	if export := payload.Conditions.ExportToInstance; export != nil && export.Enabled {
 		if h.instanceStore == nil {
-			return nil, http.StatusInternalServerError, "Instance store not configured"
+			return http.StatusInternalServerError, "Instance store not configured"
 		}
 		if _, err := h.instanceStore.Get(ctx, export.TargetInstanceID); err != nil {
 			if errors.Is(err, models.ErrInstanceNotFound) {
-				return nil, http.StatusBadRequest, "Target instance not found"
+				return http.StatusBadRequest, "Target instance not found"
 			}
-			return nil, http.StatusInternalServerError, "Failed to validate target instance"
+			return http.StatusInternalServerError, "Failed to validate target instance"
 		}
 		role, _ := ctx.Value(ctxkeys.UserRole).(string)
 		allowed, err := h.instanceStore.CanAccess(ctx, export.TargetInstanceID, currentUserIDFromContext(ctx), role == string(models.UserRoleAdmin))
 		if err != nil {
-			return nil, http.StatusInternalServerError, "Failed to authorize target instance"
+			return http.StatusInternalServerError, "Failed to authorize target instance"
 		}
 		if !allowed {
-			return nil, http.StatusForbidden, "Target instance access denied"
+			return http.StatusForbidden, "Target instance access denied"
 		}
 	}
 
 	// Verify the referenced external program exists
 	if program := payload.Conditions.ExternalProgram; program != nil && program.Enabled && program.ProgramID > 0 {
 		if h.authService == nil {
-			return nil, http.StatusServiceUnavailable, "External program authorization is not available"
+			return http.StatusServiceUnavailable, "External program authorization is not available"
 		}
 		role, _ := ctx.Value(ctxkeys.UserRole).(string)
 		allowed, err := h.authService.HasPermission(ctx, currentUserIDFromContext(ctx), models.UserRole(role), models.PermissionExecuteExternalPrograms)
 		if err != nil {
-			return nil, http.StatusInternalServerError, "Failed to authorize external program"
+			return http.StatusInternalServerError, "Failed to authorize external program"
 		}
 		if !allowed {
-			return nil, http.StatusForbidden, "External program permission required"
+			return http.StatusForbidden, "External program permission required"
 		}
 		if h.externalProgramStore == nil {
 			log.Warn().Msg("automations: external program store is nil, skipping program existence check")
-			return nil, http.StatusServiceUnavailable, "External program service not available"
+			return http.StatusServiceUnavailable, "External program service not available"
 		}
 		if _, err := h.externalProgramStore.GetByID(ctx, program.ProgramID); err != nil {
 			if errors.Is(err, models.ErrExternalProgramNotFound) {
-				return nil, http.StatusBadRequest, "Referenced external program does not exist"
+				return http.StatusBadRequest, "Referenced external program does not exist"
 			}
-			return nil, http.StatusInternalServerError, "Failed to verify external program"
+			return http.StatusInternalServerError, "Failed to verify external program"
 		}
 	}
 
-	return payload, 0, ""
+	return 0, ""
 }
 
 func (h *AutomationHandler) ListActivity(w http.ResponseWriter, r *http.Request) {
@@ -503,13 +511,23 @@ const (
 	previewActionNone previewActionType = iota
 	previewActionDelete
 	previewActionCategory
+	previewActionTag
 	previewActionBoth // error case
 )
 
 // detectPreviewAction determines which preview action is enabled in the payload.
+// Tag preview is detected only when neither delete nor category is enabled, so
+// combined rules keep their existing dispatch behavior.
 func detectPreviewAction(conditions *models.ActionConditions) previewActionType {
 	hasDelete := conditions != nil && conditions.Delete != nil && conditions.Delete.Enabled
 	hasCategory := conditions != nil && conditions.Category != nil && conditions.Category.Enabled
+	hasTag := false
+	for _, tagAction := range conditions.TagActions() {
+		if tagAction != nil && tagAction.Enabled {
+			hasTag = true
+			break
+		}
+	}
 
 	switch {
 	case hasDelete && hasCategory:
@@ -518,6 +536,8 @@ func detectPreviewAction(conditions *models.ActionConditions) previewActionType 
 		return previewActionCategory
 	case hasDelete:
 		return previewActionDelete
+	case hasTag:
+		return previewActionTag
 	default:
 		return previewActionNone
 	}
@@ -547,9 +567,9 @@ func (h *AutomationHandler) PreviewDeleteRule(w http.ResponseWriter, r *http.Req
 		RespondError(w, http.StatusBadRequest, "Cannot preview rule with both delete and category actions enabled")
 		return
 	case previewActionNone:
-		RespondError(w, http.StatusBadRequest, "Preview requires either delete or category action to be enabled")
+		RespondError(w, http.StatusBadRequest, "Preview requires a delete, category, or tag action to be enabled")
 		return
-	case previewActionDelete, previewActionCategory:
+	case previewActionDelete, previewActionCategory, previewActionTag:
 		// Valid actions - continue processing
 	}
 
@@ -558,6 +578,11 @@ func (h *AutomationHandler) PreviewDeleteRule(w http.ResponseWriter, r *http.Req
 
 	if action == previewActionCategory {
 		h.handleCategoryPreview(r.Context(), w, instanceID, automation, previewLimit, previewOffset)
+		return
+	}
+
+	if action == previewActionTag {
+		h.handleTagPreview(r.Context(), w, instanceID, automation, previewLimit, previewOffset)
 		return
 	}
 
@@ -579,6 +604,16 @@ func (h *AutomationHandler) handleCategoryPreview(ctx context.Context, w http.Re
 	result, err := h.service.PreviewCategoryRule(ctx, instanceID, automation, limit, offset)
 	if err != nil {
 		log.Error().Err(err).Int("instanceID", instanceID).Msg("automations: failed to preview category rule")
+		RespondError(w, http.StatusInternalServerError, "Failed to preview automation")
+		return
+	}
+	RespondJSON(w, http.StatusOK, result)
+}
+
+func (h *AutomationHandler) handleTagPreview(ctx context.Context, w http.ResponseWriter, instanceID int, automation *models.Automation, limit, offset int) {
+	result, err := h.service.PreviewTagRule(ctx, instanceID, automation, limit, offset)
+	if err != nil {
+		log.Error().Err(err).Int("instanceID", instanceID).Msg("automations: failed to preview tag rule")
 		RespondError(w, http.StatusInternalServerError, "Failed to preview automation")
 		return
 	}

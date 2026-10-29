@@ -11,13 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   stream: { resetInstanceStreams: vi.fn() },
-  selection: { clearSelection: vi.fn() },
+  selection: { dispatch: vi.fn() },
   success: vi.fn(),
   error: vi.fn(),
 }))
 vi.mock("@/lib/api", () => ({ api: { refreshTorrents: mocks.refresh } }))
 vi.mock("@/contexts/SyncStreamContext", () => ({ useSyncStreamManager: () => mocks.stream }))
-vi.mock("@/contexts/TorrentSelectionContext", () => ({ useTorrentSelection: () => mocks.selection }))
+vi.mock("@/contexts/TorrentSelectionContext", () => ({ useTorrentSelectionContext: () => mocks.selection }))
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock("sonner", () => ({ toast: { success: mocks.success, error: mocks.error } }))
 vi.mock("@/components/ui/tooltip", () => ({
@@ -57,7 +57,7 @@ describe("TorrentRefreshButton", () => {
     expect(client.getQueryData(["torrents-list", 0])).toBeUndefined()
     expect(client.getQueryData(["torrents-list", 2])).toBeDefined()
     expect(mocks.stream.resetInstanceStreams).toHaveBeenCalledWith([1])
-    expect(mocks.selection.clearSelection).toHaveBeenCalledOnce()
+    expect(mocks.selection.dispatch).toHaveBeenCalledWith({ type: "clear" })
     expect(mocks.success).toHaveBeenCalledWith("header.forceRefreshSuccess")
     expect(button.disabled).toBe(false)
   })

@@ -556,6 +556,8 @@ func TestOrphanScanReadsIntegerBooleanColumns(t *testing.T) {
 			truncated INTEGER NOT NULL DEFAULT 0,
 			partial INTEGER NOT NULL DEFAULT 0,
 			filesystem_mode TEXT NOT NULL DEFAULT 'local',
+			identity_complete INTEGER NOT NULL DEFAULT 0,
+			filesystem_endpoint TEXT NOT NULL DEFAULT '',
 			error_message TEXT,
 			started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			completed_at TIMESTAMP
@@ -569,9 +571,9 @@ func TestOrphanScanReadsIntegerBooleanColumns(t *testing.T) {
 	`)
 	mustExec(t, db, `
 		INSERT INTO orphan_scan_runs
-			(instance_id, status, triggered_by, scan_paths, files_found, files_deleted, folders_deleted, bytes_reclaimed, truncated, partial)
+			(instance_id, status, triggered_by, scan_paths, files_found, files_deleted, folders_deleted, bytes_reclaimed, truncated, partial, identity_complete)
 		VALUES
-			(1, 'completed', 'manual', '[]', 10, 5, 1, 1024, 1, 1)
+			(1, 'completed', 'manual', '[]', 10, 5, 1, 1024, 1, 1, 1)
 	`)
 
 	store := NewOrphanScanStore(&capturingQuerier{db: db})
@@ -587,6 +589,7 @@ func TestOrphanScanReadsIntegerBooleanColumns(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, run.Truncated)
 	require.True(t, run.Partial)
+	require.True(t, run.IdentityComplete)
 }
 
 func TestDirScanReadsIntegerBooleanColumns(t *testing.T) {

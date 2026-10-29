@@ -437,6 +437,7 @@ func (cp *ClientPool) createClientWithTimeout(ctx context.Context, instanceID in
 	if instance.ClientType == models.ClientTypeTransmission {
 		// Transmission instances are served through the RPC bridge; API key and
 		// reverse-proxy basic auth do not apply to the daemon itself.
+		//nolint:contextcheck // the client constructor owns the bounded login context, as for qBittorrent below
 		client, err = NewTransmissionClientWithTimeout(instanceID, instance.Host, instance.Username, password, instance.TLSSkipVerify, timeout, cp.clientTimeout)
 	} else {
 		client, err = NewClientWithTimeout(instanceID, instance.Host, instance.Username, password, apiKey, instance.BasicUsername, basicPassword, instance.TLSSkipVerify, timeout, cp.clientTimeout)
@@ -731,24 +732,24 @@ func (cp *ClientPool) resetFailureTrackingLocked(instanceID int) {
 	if _, exists := cp.failureTracker[instanceID]; exists {
 		delete(cp.failureTracker, instanceID)
 		hadFailures = true
-		log.Debug().Int("instanceID", instanceID).Msg("Reset failure tracking after successful connection")
+		log.Debug().Int("instanceID", instanceID).Msg("Reset failure tracking")
 	}
 
-	// Also reset decryption error tracking on successful connection
+	// Also reset decryption error tracking
 	if _, exists := cp.decryptionTracker[instanceID]; exists {
 		delete(cp.decryptionTracker, instanceID)
 		hadFailures = true
-		log.Debug().Int("instanceID", instanceID).Msg("Reset decryption error tracking after successful connection")
+		log.Debug().Int("instanceID", instanceID).Msg("Reset decryption error tracking")
 	}
 
-	// Always clear errors from database on successful connection
+	// Always clear errors from database
 	// This ensures database cleanup even if in-memory tracking was reset (e.g., after restart)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if clearErr := cp.errorStore.ClearErrors(ctx, instanceID); clearErr != nil {
 		log.Error().Err(clearErr).Int("instanceID", instanceID).Msg("Failed to clear errors from database")
 	} else if hadFailures {
-		log.Debug().Int("instanceID", instanceID).Msg("Cleared instance errors from database after successful connection")
+		log.Debug().Int("instanceID", instanceID).Msg("Cleared instance errors from database")
 	}
 }
 

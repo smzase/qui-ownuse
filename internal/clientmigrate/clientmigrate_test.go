@@ -11,6 +11,7 @@ import (
 	"github.com/autobrr/go-torrent/metainfo"
 	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // testInfo is a 3-piece multi-file torrent: file a spans pieces 0-1, file b
@@ -231,6 +232,69 @@ func TestTransmissionFilePriorities(t *testing.T) {
 	assert.Equal(t, []int{0, 6}, transmissionFilePriorities(&resume, 2))
 	// mismatched lengths fall back to all-normal
 	assert.Equal(t, []int{1, 1, 1}, transmissionFilePriorities(&resume, 3))
+}
+
+func TestTransmissionRenames(t *testing.T) {
+	t.Parallel()
+
+	info := testInfo()
+	single := metainfo.Info{Name: "Test.Torrent.2024.1080p.WEB-TEST.mkv", PieceLength: 16384, Length: 1000}
+
+	tests := []struct {
+		name       string
+		info       *metainfo.Info
+		resume     TransmissionResumeFile
+		wantName   string
+		wantMapped []string
+	}{
+		{
+			name:   "no files key",
+			info:   &info,
+			resume: TransmissionResumeFile{Name: info.Name},
+		},
+		{
+			name:   "4.x paths unchanged",
+			info:   &info,
+			resume: TransmissionResumeFile{Name: info.Name, Files: []string{info.Name + "/a.mkv", info.Name + "/b.mkv"}},
+		},
+		{
+			name: "4.x root folder renamed",
+			info: &info,
+			resume: TransmissionResumeFile{
+				Name:  "Test Torrent (2024)",
+				Files: []string{"Test Torrent (2024)/a.mkv", "Test Torrent (2024)/b.mkv"},
+			},
+			wantName:   "Test Torrent (2024)",
+			wantMapped: []string{"Test Torrent (2024)/a.mkv", "Test Torrent (2024)/b.mkv"},
+		},
+		{
+			name:       "2.9x one file renamed",
+			info:       &info,
+			resume:     TransmissionResumeFile{Name: info.Name, Files: []string{"", info.Name + "/c.mkv"}},
+			wantMapped: []string{"", info.Name + "/c.mkv"},
+		},
+		{
+			name:       "single file renamed",
+			info:       &single,
+			resume:     TransmissionResumeFile{Name: "renamed.mkv", Files: []string{"renamed.mkv"}},
+			wantName:   "renamed.mkv",
+			wantMapped: []string{"renamed.mkv"},
+		},
+		{
+			name:     "file count mismatch",
+			info:     &info,
+			resume:   TransmissionResumeFile{Name: "Test Torrent (2024)", Files: []string{"Test Torrent (2024)/a.mkv"}},
+			wantName: "Test Torrent (2024)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.wantName, transmissionName(&tt.resume, tt.info))
+			assert.Equal(t, tt.wantMapped, transmissionMappedFiles(&tt.resume, tt.info))
+		})
+	}
 }
 
 func TestRTorrentFilePriorities(t *testing.T) {
@@ -493,4 +557,31 @@ func TestFirstNonZero(t *testing.T) {
 	assert.Equal(t, int64(5), firstNonZero(0, 5, 3))
 	assert.Equal(t, int64(0), firstNonZero(0, 0))
 	assert.Equal(t, int64(1), firstNonZero(1))
+}
+
+func TestDecodeTransmissionResumeFileStructuredPeers(t *testing.T) {
+	// newer Transmission writes peers2 as structured entries instead of a
+	// compact byte string; the importer must not fail on either form
+	for name, peers := range map[string]any{
+		"compact": "\x7f\x00\x00\x01\x1a\xe1",
+		"dict":    map[string]any{"address": "127.0.0.1", "port": 6881},
+		"list":    []any{map[string]any{"address": "127.0.0.1", "port": 6881}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dat, err := bencode.Marshal(map[string]any{
+				"destination": "/downloads",
+				"peers2":      peers,
+				"progress":    map[string]any{"blocks": "all"},
+			})
+			require.NoError(t, err)
+
+			path := filepath.Join(t.TempDir(), "test.resume")
+			require.NoError(t, os.WriteFile(path, dat, 0o600))
+
+			resume, err := (&TransmissionImport{}).decodeResumeFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, "/downloads", resume.Destination)
+			assert.Equal(t, "all", resume.Progress.Blocks)
+		})
+	}
 }

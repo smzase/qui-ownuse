@@ -137,6 +137,7 @@ var sharedMigrationFilenameRenames = []migrationFilenameRename{
 }
 
 var sqliteMigrationFilenameRenames = []migrationFilenameRename{
+	{from: "107_add_orphan_scan_run_identity.sql", to: "113_add_orphan_scan_run_identity.sql"},
 	{from: "106_add_instance_ssh_tier.sql", to: "111_add_instance_ssh_tier.sql"},
 	{from: "094_add_arr_id_cache_episode_map.sql", to: "098_add_arr_id_cache_episode_map.sql"},
 	{from: "095_add_disc_scan_runs.sql", to: "099_add_disc_scan_runs.sql"},
@@ -229,6 +230,7 @@ var sqliteMigrationFilenameRenames = []migrationFilenameRename{
 }
 
 var postgresMigrationFilenameRenames = []migrationFilenameRename{
+	{from: "108_add_orphan_scan_run_identity.sql", to: "114_add_orphan_scan_run_identity.sql"},
 	{from: "107_add_instance_ssh_tier.sql", to: "112_add_instance_ssh_tier.sql"},
 	{from: "095_add_arr_id_cache_episode_map.sql", to: "099_add_arr_id_cache_episode_map.sql"},
 	{from: "096_add_disc_scan_runs.sql", to: "100_add_disc_scan_runs.sql"},

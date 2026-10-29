@@ -435,40 +435,44 @@ func (b *Bridge) handleMaindata(ctx context.Context, req *http.Request) (*http.R
 		payload["tags"] = sortedKeys(tags)
 		payload["trackers"] = trackers
 	} else {
-		payload["full_update"] = false
-
-		changed := make(map[string]json.RawMessage)
-		for hash, data := range newTorrents {
-			if old, ok := prev.torrents[hash]; !ok || !jsonEqual(old, data) {
-				changed[hash] = data
-			}
-		}
-		if len(changed) > 0 {
-			payload["torrents"] = changed
-		}
-
-		removed := make([]string, 0)
-		for hash := range prev.torrents {
-			if _, ok := newTorrents[hash]; !ok {
-				removed = append(removed, hash)
-			}
-		}
-		if len(removed) > 0 {
-			payload["torrents_removed"] = removed
-		}
-
-		if !mapsEqual(prev.tags, tags) {
-			payload["tags"] = sortedKeys(tags)
-			if removedTags := mapKeysMissing(tags, prev.tags); len(removedTags) > 0 {
-				payload["tags_removed"] = removedTags
-			}
-		}
-		if !trackersEqual(prev.trackers, trackers) {
-			payload["trackers"] = trackers
-		}
+		addMaindataDelta(payload, prev, snapshot)
 	}
 
 	return jsonResponse(req, http.StatusOK, payload)
+}
+
+func addMaindataDelta(payload map[string]any, prev, current *bridgeSnapshot) {
+	payload["full_update"] = false
+
+	changed := make(map[string]json.RawMessage)
+	for hash, data := range current.torrents {
+		if old, ok := prev.torrents[hash]; !ok || !jsonEqual(old, data) {
+			changed[hash] = data
+		}
+	}
+	if len(changed) > 0 {
+		payload["torrents"] = changed
+	}
+
+	removed := make([]string, 0)
+	for hash := range prev.torrents {
+		if _, ok := current.torrents[hash]; !ok {
+			removed = append(removed, hash)
+		}
+	}
+	if len(removed) > 0 {
+		payload["torrents_removed"] = removed
+	}
+
+	if !mapsEqual(prev.tags, current.tags) {
+		payload["tags"] = sortedKeys(current.tags)
+		if removedTags := mapKeysMissing(current.tags, prev.tags); len(removedTags) > 0 {
+			payload["tags_removed"] = removedTags
+		}
+	}
+	if !trackersEqual(prev.trackers, current.trackers) {
+		payload["trackers"] = current.trackers
+	}
 }
 
 func (b *Bridge) buildServerState(sess *session, stats *sessionStats, freeSpace int64, dlSpeed, upSpeed int64) map[string]any {

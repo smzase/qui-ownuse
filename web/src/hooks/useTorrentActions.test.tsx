@@ -287,6 +287,183 @@ describe("useTorrentActions - delete", () => {
     expect(cache.total).toBe(2)
     expect(cache.totalCount).toBe(2)
   })
+
+  it("select-all delete sends the chosen cross-seeds in a second targeted request", async () => {
+    const { result } = renderActions()
+    const crossSeedTargets = [
+      { instanceId: 7, hash: "cs1" },
+      { instanceId: 9, hash: "cs2" },
+    ]
+
+    await act(async () => {
+      await result.current.handleDelete(
+        ["a"],
+        true,
+        undefined,
+        "",
+        undefined,
+        { clientHashes: ["a"], totalSelected: 50, crossSeedTargets }
+      )
+    })
+
+    expect(mockedApi.bulkAction).toHaveBeenCalledTimes(2)
+    const first = mockedApi.bulkAction.mock.calls[0][1]
+    expect(first.selectAll).toBe(true)
+    expect(first.hashes).toEqual([])
+    const second = mockedApi.bulkAction.mock.calls[1][1]
+    expect(second.selectAll).toBeFalsy()
+    expect(second.hashes).toEqual([])
+    expect(second.targets).toEqual(crossSeedTargets)
+    expect(mockedToast.success).toHaveBeenCalledWith("actionToasts.success.delete/50")
+    expect(mockedToast.success).toHaveBeenCalledWith("actionToasts.success.delete/2")
+  })
+
+  it("deleteFiles applies to the cross-seed request too", async () => {
+    // Seed persisted deleteFiles=true so usePersistedDeleteFiles starts true
+    localStorage.setItem("qui-delete-files-lock", JSON.stringify(true))
+    localStorage.setItem("qui-delete-files-default", JSON.stringify(true))
+
+    const { result } = renderActions()
+    const crossSeedTargets = [
+      { instanceId: 7, hash: "cs1" },
+      { instanceId: 9, hash: "cs2" },
+    ]
+
+    await act(async () => {
+      await result.current.handleDelete(
+        ["a"],
+        true,
+        undefined,
+        "",
+        undefined,
+        { clientHashes: ["a"], totalSelected: 50, crossSeedTargets }
+      )
+    })
+
+    expect(mockedApi.bulkAction.mock.calls[0][1].deleteFiles).toBe(true)
+    expect(mockedApi.bulkAction.mock.calls[1][1].deleteFiles).toBe(true)
+  })
+
+  it("select-all delete also sends a cross-seed that the user unticked from the select-all", async () => {
+    // The dialog lists an unticked cross-seed like any other cross-seed that is not selected,
+    // so "Also delete these cross-seeded torrents" deletes it too.
+    const { result } = renderActions()
+
+    await act(async () => {
+      await result.current.handleDelete(
+        [],
+        true,
+        undefined,
+        "",
+        ["cs1"],
+        { clientHashes: ["a"], totalSelected: 50, crossSeedTargets: [{ instanceId: 7, hash: "cs1" }] }
+      )
+    })
+
+    expect(mockedApi.bulkAction.mock.calls[0][1].excludeHashes).toEqual(["cs1"])
+    expect(mockedApi.bulkAction.mock.calls[1][1].targets).toEqual([{ instanceId: 7, hash: "cs1" }])
+  })
+
+  it("select-all delete rejects when the cross-seed request fails, after request 1 succeeded", async () => {
+    const { result } = renderActions()
+    mockedApi.bulkAction.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("boom"))
+
+    await act(async () => {
+      await expect(result.current.handleDelete(
+        [],
+        true,
+        undefined,
+        "",
+        undefined,
+        { clientHashes: ["a"], totalSelected: 50, crossSeedTargets: [{ instanceId: 7, hash: "cs1" }] }
+      )).rejects.toThrow("boom")
+    })
+
+    expect(mockedApi.bulkAction).toHaveBeenCalledTimes(2)
+    expect(mockedToast.error).toHaveBeenCalledTimes(1)
+  })
+
+  it("non-select-all delete lists the cross-seeds in the same request", async () => {
+    const { result } = renderActions()
+
+    await act(async () => {
+      await result.current.handleDelete(
+        ["h1"],
+        false,
+        undefined,
+        undefined,
+        undefined,
+        {
+          clientHashes: ["h1"],
+          totalSelected: 1,
+          actionTargets: [{ instanceId: 7, hash: "h1" }],
+          crossSeedTargets: [{ instanceId: 7, hash: "cs1" }],
+        }
+      )
+    })
+
+    expect(mockedApi.bulkAction).toHaveBeenCalledTimes(1)
+    const request = mockedApi.bulkAction.mock.calls[0][1]
+    expect(request.hashes).toEqual(["h1", "cs1"])
+    expect(request.targets).toEqual([{ instanceId: 7, hash: "h1" }, { instanceId: 7, hash: "cs1" }])
+    expect(mockedToast.success).toHaveBeenCalledWith("actionToasts.success.delete/2")
+  })
+
+  // A request on one instance leaves out targets on other instances.
+  // regression: #3592
+  it("sends the cross-seeds to the unified scope when one is on another instance", async () => {
+    const { result } = renderActions()
+    const crossSeedTargets = [{ instanceId: 7, hash: "cs1" }, { instanceId: 9, hash: "cs2" }]
+
+    await act(async () => {
+      await result.current.handleDelete(
+        ["h1"],
+        false,
+        undefined,
+        undefined,
+        undefined,
+        { clientHashes: ["h1"], totalSelected: 1, actionTargets: [{ instanceId: 7, hash: "h1" }], crossSeedTargets }
+      )
+    })
+
+    expect(mockedApi.bulkAction).toHaveBeenCalledTimes(2)
+    const [firstScope, first] = mockedApi.bulkAction.mock.calls[0]
+    expect(firstScope).toBe(7)
+    expect(first.targets).toEqual([{ instanceId: 7, hash: "h1" }])
+    const [secondScope, second] = mockedApi.bulkAction.mock.calls[1]
+    expect(secondScope).toBe(0)
+    expect(second.targets).toEqual(crossSeedTargets)
+    expect(second.hashes).toEqual([])
+  })
+
+  it("leaves a cross-seed on another instance out of the cached total of this instance", async () => {
+    const { result, queryClient } = renderActions()
+    queryClient.setQueryData(TORRENTS_LIST_KEY(), {
+      torrents: [makeTorrent({ hash: "h1" }), makeTorrent({ hash: "cs1" }), makeTorrent({ hash: "keep" })],
+      total: 10,
+      totalCount: 10,
+    })
+
+    await act(async () => {
+      await result.current.handleDelete(
+        ["h1"],
+        false,
+        undefined,
+        undefined,
+        undefined,
+        {
+          clientHashes: ["h1"],
+          totalSelected: 1,
+          actionTargets: [{ instanceId: 7, hash: "h1" }],
+          crossSeedTargets: [{ instanceId: 7, hash: "cs1" }, { instanceId: 9, hash: "cs2" }],
+        }
+      )
+    })
+
+    const cache = queryClient.getQueryData(TORRENTS_LIST_KEY()) as { total: number; totalCount: number }
+    expect(cache.total).toBe(8)
+    expect(cache.totalCount).toBe(8)
+  })
 })
 
 describe("useTorrentActions - tags", () => {

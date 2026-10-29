@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
@@ -21,6 +20,7 @@ import (
 	"github.com/autobrr/qui/internal/fsops"
 	localbackend "github.com/autobrr/qui/internal/fsops/local"
 	"github.com/autobrr/qui/internal/models"
+	"github.com/autobrr/qui/internal/services/activity"
 	"github.com/autobrr/qui/internal/services/dirscan"
 	"github.com/autobrr/qui/internal/testutil/testdb"
 )
@@ -143,6 +143,16 @@ func TestNormalizeAllowedDownloadClients(t *testing.T) {
 	)
 }
 
+// waitDirScanIdle waits until the directory has no queued or running scan.
+func waitDirScanIdle(t *testing.T, service *dirscan.Service, events <-chan activity.Event, directoryID int) {
+	t.Helper()
+	waitForActivity(t, events, func() bool {
+		run, err := service.GetActiveRun(t.Context(), directoryID)
+		require.NoError(t, err)
+		return run == nil
+	})
+}
+
 func TestTriggerScan_ReturnsMatchedDirectoryMetadata(t *testing.T) {
 	ctx := t.Context()
 
@@ -166,8 +176,9 @@ func TestTriggerScan_ReturnsMatchedDirectoryMetadata(t *testing.T) {
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
 		nil,
-		nil,
 	)
+	hub, events := newActivityHub(t)
+	service.SetActivityPublisher(hub)
 	handler := NewDirScanHandler(service, instanceStore)
 
 	dirPath := t.TempDir()
@@ -196,11 +207,7 @@ func TestTriggerScan_ReturnsMatchedDirectoryMetadata(t *testing.T) {
 	require.Equal(t, dirPath, resp.DirectoryPath)
 	require.Equal(t, dirPath, resp.ScanRoot)
 
-	require.Eventually(t, func() bool {
-		run, getErr := service.GetActiveRun(ctx, created.ID)
-		require.NoError(t, getErr)
-		return run == nil
-	}, 5*time.Second, 50*time.Millisecond)
+	waitDirScanIdle(t, service, events, created.ID)
 }
 
 func TestWebhookTriggerScan_RejectsAmbiguousDuplicateDirectoryPaths(t *testing.T) {
@@ -225,7 +232,6 @@ func TestWebhookTriggerScan_RejectsAmbiguousDuplicateDirectoryPaths(t *testing.T
 		nil,
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
-		nil,
 		nil,
 	)
 	handler := NewDirScanHandler(service, instanceStore)
@@ -274,7 +280,6 @@ func TestWebhookTriggerScan_AcceptsArrTestPayloadWithoutScan(t *testing.T) {
 		nil,
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
-		nil,
 		nil,
 	)
 	handler := NewDirScanHandler(service, instanceStore)
@@ -325,8 +330,9 @@ func TestWebhookTriggerScan_ScansOnlyRequestedSubtree(t *testing.T) {
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
 		nil,
-		nil,
 	)
+	hub, events := newActivityHub(t)
+	service.SetActivityPublisher(hub)
 	handler := NewDirScanHandler(service, instanceStore)
 
 	root := t.TempDir()
@@ -367,11 +373,7 @@ func TestWebhookTriggerScan_ScansOnlyRequestedSubtree(t *testing.T) {
 	require.Equal(t, root, resp.DirectoryPath)
 	require.Equal(t, first, resp.ScanRoot)
 
-	require.Eventually(t, func() bool {
-		run, getErr := service.GetActiveRun(ctx, created.ID)
-		require.NoError(t, getErr)
-		return run == nil
-	}, 5*time.Second, 50*time.Millisecond)
+	waitDirScanIdle(t, service, events, created.ID)
 
 	run, err := models.NewDirScanStore(db).GetRun(ctx, resp.RunID)
 	require.NoError(t, err)
@@ -403,7 +405,6 @@ func TestWebhookTriggerScan_SkipsWhenDownloadClientNotAllowed(t *testing.T) {
 		nil,
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
-		nil,
 		nil,
 	)
 	handler := NewDirScanHandler(service, instanceStore)
@@ -467,7 +468,6 @@ func TestWebhookTriggerScan_SkipsWhenDownloadClientMissingButFilterExists(t *tes
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
 		nil,
-		nil,
 	)
 	handler := NewDirScanHandler(service, instanceStore)
 
@@ -529,8 +529,9 @@ func TestWebhookTriggerScan_MatchesDownloadClientCaseInsensitively(t *testing.T)
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
 		nil,
-		nil,
 	)
+	hub, events := newActivityHub(t)
+	service.SetActivityPublisher(hub)
 	handler := NewDirScanHandler(service, instanceStore)
 
 	root := t.TempDir()
@@ -569,11 +570,7 @@ func TestWebhookTriggerScan_MatchesDownloadClientCaseInsensitively(t *testing.T)
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, created.ID, resp.DirectoryID)
 
-	require.Eventually(t, func() bool {
-		run, getErr := service.GetActiveRun(ctx, created.ID)
-		require.NoError(t, getErr)
-		return run == nil
-	}, 5*time.Second, 50*time.Millisecond)
+	waitDirScanIdle(t, service, events, created.ID)
 }
 
 func TestWebhookTriggerScan_SimpleModeBypassesDownloadClientFilter(t *testing.T) {
@@ -599,8 +596,9 @@ func TestWebhookTriggerScan_SimpleModeBypassesDownloadClientFilter(t *testing.T)
 		nil,
 		fsops.NewPool(instanceStore, localbackend.NewBackend()),
 		nil,
-		nil,
 	)
+	hub, events := newActivityHub(t)
+	service.SetActivityPublisher(hub)
 	handler := NewDirScanHandler(service, instanceStore)
 
 	root := t.TempDir()
@@ -636,9 +634,5 @@ func TestWebhookTriggerScan_SimpleModeBypassesDownloadClientFilter(t *testing.T)
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, created.ID, resp.DirectoryID)
 
-	require.Eventually(t, func() bool {
-		run, getErr := service.GetActiveRun(ctx, created.ID)
-		require.NoError(t, getErr)
-		return run == nil
-	}, 5*time.Second, 50*time.Millisecond)
+	waitDirScanIdle(t, service, events, created.ID)
 }

@@ -6,6 +6,7 @@ package dirscan
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/autobrr/qui/internal/fsops"
 	"github.com/autobrr/qui/internal/fsops/local"
 	"github.com/autobrr/qui/internal/models"
+	"github.com/autobrr/qui/internal/services/crossseed"
 	"github.com/autobrr/qui/internal/services/jackett"
 	"github.com/autobrr/qui/pkg/hardlinktree"
 )
@@ -36,6 +38,53 @@ type fakeInstanceStore struct {
 
 func (s *fakeInstanceStore) Get(_ context.Context, _ int) (*models.Instance, error) {
 	return s.instance, nil
+}
+
+type torrentAdder interface {
+	AddTorrent(ctx context.Context, instanceID int, fileContent []byte, options map[string]string) (*qbt.TorrentAddResponse, error)
+}
+
+// torrentManager is a test qBittorrent that adds torrents and aligns their paths.
+type torrentManager interface {
+	torrentAdder
+	RenameTorrentFile(ctx context.Context, instanceID int, hash, oldPath, newPath string) error
+	RenameTorrentFolder(ctx context.Context, instanceID int, hash, oldPath, newPath string) error
+	GetTorrentFilesBatch(ctx context.Context, instanceID int, hashes []string) (map[string]qbt.TorrentFiles, error)
+}
+
+// adderQbit is the three-method qBittorrent seam of the Adder. It sends each add
+// to the test manager and finds only the existing torrent.
+type adderQbit struct {
+	torrentAdder
+	existing *qbt.Torrent
+}
+
+func (q adderQbit) HasTorrentByAnyHash(context.Context, int, []string) (*qbt.Torrent, bool, error) {
+	return q.existing, q.existing != nil, nil
+}
+
+func (adderQbit) BulkAction(context.Context, int, []string, string) error {
+	return nil
+}
+
+// testAdder is the real Adder over the three-method qBittorrent fake and the
+// Settle module of the test.
+func testAdder(manager torrentAdder, settler *crossseed.Settler, runExternalProgram func(context.Context, int, []string)) *crossseed.Adder {
+	if runExternalProgram == nil {
+		runExternalProgram = func(context.Context, int, []string) {}
+	}
+	return crossseed.NewAdder(adderQbit{torrentAdder: manager}, nil, settler, func(context.Context) int64 { return 0 }, runExternalProgram)
+}
+
+// inject runs the Pre-add check for req, as tryMatchAndInject does, and then the injection.
+func inject(ctx context.Context, t *testing.T, injector *Injector, req *InjectRequest) (*InjectResult, error) {
+	t.Helper()
+	check, refusal := injector.adder.Check(ctx, req.InstanceID, crossseed.AddFacts{}, req.ParsedTorrent.InfoHash, req.ParsedTorrent.InfoHashV2)
+	if refusal != nil {
+		t.Fatalf("pre-add check refused: %+v", refusal)
+	}
+	req.Check = check
+	return injector.Inject(ctx, req)
 }
 
 type failingTorrentAdder struct {
@@ -137,9 +186,9 @@ func TestInjector_Inject_RollsBackLinkTreeOnAddFailure(t *testing.T) {
 	fx := newInjectFixture(t)
 
 	adder := &failingTorrentAdder{err: errors.New("add failed")}
-	injector := NewInjector(nil, adder, (&settleFake{}).idle(), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
+	injector := NewInjector(nil, crossseed.NewAligner(adder), testAdder(adder, (&settleFake{}).idle(), nil), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
 
-	_, err := injector.Inject(context.Background(), fx.req)
+	_, err := inject(context.Background(), t, injector, fx.req)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -159,18 +208,21 @@ func TestInjector_Inject_RollsBackLinkTreeOnAddFailure(t *testing.T) {
 // cancellingTorrentAdder cancels the run's context from inside AddTorrent, so
 // the rollback that follows sees a cancelled ctx. It records how many entries
 // the link base held at that moment, which keeps the "tree is gone" assertion
-// non-vacuous. Every other method is failingTorrentAdder's no-op.
+// non-vacuous. It also records whether the add saw the cancel. Every other
+// method is failingTorrentAdder's no-op.
 type cancellingTorrentAdder struct {
 	*failingTorrentAdder
 	cancel       context.CancelFunc
 	watchDir     string
 	entriesAtAdd int
+	addCtxErr    error
 }
 
-func (a *cancellingTorrentAdder) AddTorrent(_ context.Context, _ int, _ []byte, _ map[string]string) (*qbt.TorrentAddResponse, error) {
+func (a *cancellingTorrentAdder) AddTorrent(ctx context.Context, _ int, _ []byte, _ map[string]string) (*qbt.TorrentAddResponse, error) {
 	entries, _ := os.ReadDir(a.watchDir)
 	a.entriesAtAdd = len(entries)
 	a.cancel()
+	a.addCtxErr = ctx.Err()
 	return nil, a.err
 }
 
@@ -186,14 +238,18 @@ func TestInjector_Inject_RollsBackLinkTreeWhenAddFailsUnderCancelledContext(t *t
 		cancel:              cancel,
 		watchDir:            fx.hardlinkBase,
 	}
-	injector := NewInjector(nil, adder, (&settleFake{}).idle(), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
+	injector := NewInjector(nil, crossseed.NewAligner(adder), testAdder(adder, (&settleFake{}).idle(), nil), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
 
-	_, err := injector.Inject(ctx, fx.req)
+	_, err := inject(ctx, t, injector, fx.req)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
 	if !errors.Is(err, addErr) {
 		t.Fatalf("expected the add failure to surface, got %v", err)
+	}
+	// A paused or stopped scan must stop an add that qBittorrent has not taken yet.
+	if !errors.Is(adder.addCtxErr, context.Canceled) {
+		t.Fatalf("expected AddTorrent to see the cancelled run, got %v", adder.addCtxErr)
 	}
 	// One entry: the tree root the injector created under the base dir.
 	if adder.entriesAtAdd != 1 {
@@ -312,7 +368,7 @@ func TestInjector_Inject_PausedPartial_RechecksWithoutResume(t *testing.T) {
 
 	manager := &recordingTorrentManager{}
 	settle := &settleFake{}
-	injector := NewInjector(nil, manager, settle.idle(), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+	injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.idle(), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
 	req := &InjectRequest{
 		InstanceID:   1,
@@ -348,12 +404,15 @@ func TestInjector_Inject_PausedPartial_RechecksWithoutResume(t *testing.T) {
 		StartPaused:  true,
 	}
 
-	res, err := injector.Inject(context.Background(), req)
+	res, err := inject(context.Background(), t, injector, req)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
 	if !res.Success {
 		t.Fatalf("expected success, got %+v", res)
+	}
+	if got := manager.addOptions["useDownloadPath"]; got != "false" {
+		t.Fatalf("useDownloadPath = %q, want false so the recheck keeps the files at the save path", got)
 	}
 
 	// StartPaused leaves nothing to watch, so the module only sends the recheck.
@@ -415,7 +474,7 @@ func TestInjector_Inject_HardlinkMode_SelectsConcreteBaseDirFromCommaSeparatedLi
 
 			manager := &recordingTorrentManager{}
 			pool := fsops.NewPool(&fakeInstanceStore{instance: instance}, crossDeviceBackend{local.NewBackend(), tt.crossDevice})
-			injector := NewInjector(nil, manager, (&settleFake{}).idle(), nil, &fakeInstanceStore{instance: instance}, nil, pool)
+			injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, (&settleFake{}).idle(), nil), nil, &fakeInstanceStore{instance: instance}, nil, pool)
 
 			req := &InjectRequest{
 				InstanceID:   1,
@@ -446,7 +505,7 @@ func TestInjector_Inject_HardlinkMode_SelectsConcreteBaseDirFromCommaSeparatedLi
 				},
 			}
 
-			res, err := injector.Inject(t.Context(), req)
+			res, err := inject(t.Context(), t, injector, req)
 			if err != nil {
 				t.Fatalf("inject: %v", err)
 			}
@@ -480,7 +539,7 @@ func TestInjector_Inject_PausedPerfect_DoesNotTriggerRecheck(t *testing.T) {
 
 	manager := &recordingTorrentManager{}
 	settle := &settleFake{}
-	injector := NewInjector(nil, manager, settle.idle(), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+	injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.idle(), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
 	req := &InjectRequest{
 		InstanceID:   1,
@@ -514,7 +573,7 @@ func TestInjector_Inject_PausedPerfect_DoesNotTriggerRecheck(t *testing.T) {
 		StartPaused:  true,
 	}
 
-	res, err := injector.Inject(context.Background(), req)
+	res, err := inject(context.Background(), t, injector, req)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -542,9 +601,9 @@ func TestInjector_Inject_DiscLayoutPerfect_StaysPausedUntilComplete(t *testing.T
 			{Hash: "deadbeef", State: qbt.TorrentStatePausedUp, Progress: 1},
 			{Hash: "deadbeef", State: qbt.TorrentStatePausedUp, Progress: 1},
 		}}
-		injector := NewInjector(nil, manager, settle.start(t), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+		injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.start(t), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
-		res, err := injector.Inject(t.Context(), req)
+		res, err := inject(t.Context(), t, injector, req)
 		if err != nil {
 			t.Fatalf("inject: %v", err)
 		}
@@ -722,9 +781,9 @@ func TestInjector_PartialLinkTree_DownloadMissingEnabled_NotPaused(t *testing.T)
 			},
 			pieces: []qbt.PieceState{qbt.PieceStateNotDownloadYet},
 		}
-		injector := NewInjector(nil, manager, settle.start(t), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+		injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.start(t), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
-		res, err := injector.Inject(t.Context(), req)
+		res, err := inject(t.Context(), t, injector, req)
 		if err != nil {
 			t.Fatalf("inject: %v", err)
 		}
@@ -774,7 +833,7 @@ func TestInjector_PartialLinkTree_DownloadMissingEnabled_Paused(t *testing.T) {
 
 	manager := &safeRecordingManager{}
 	settle := &settleFake{}
-	injector := NewInjector(nil, manager, settle.idle(), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+	injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.idle(), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
 	req := &InjectRequest{
 		InstanceID:   1,
@@ -811,12 +870,15 @@ func TestInjector_PartialLinkTree_DownloadMissingEnabled_Paused(t *testing.T) {
 		DownloadMissingFiles: true,
 	}
 
-	res, err := injector.Inject(context.Background(), req)
+	res, err := inject(context.Background(), t, injector, req)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
 	if !res.Success {
 		t.Fatalf("expected success, got %+v", res)
+	}
+	if got := manager.getAddOptions()["useDownloadPath"]; got != "false" {
+		t.Fatalf("useDownloadPath = %q, want false so the recheck keeps the link tree at the save path", got)
 	}
 
 	if got := settle.calls(); !slices.Equal(got, []string{"recheck"}) {
@@ -830,9 +892,9 @@ func TestInjector_PartialLinkTree_DownloadMissingDisabled(t *testing.T) {
 
 	manager := &safeRecordingManager{}
 	settle := &settleFake{}
-	injector := NewInjector(nil, manager, settle.idle(), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
+	injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.idle(), nil), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
 
-	_, err := injector.Inject(context.Background(), fx.req)
+	_, err := inject(context.Background(), t, injector, fx.req)
 	if err == nil {
 		t.Fatal("expected error for partial link tree with DownloadMissingFiles=false")
 	}
@@ -880,7 +942,7 @@ func TestInjector_PerfectMatch_UnaffectedByDownloadMissing(t *testing.T) {
 
 	manager := &safeRecordingManager{}
 	settle := &settleFake{}
-	injector := NewInjector(nil, manager, settle.idle(), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+	injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.idle(), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
 	req := &InjectRequest{
 		InstanceID:   1,
@@ -914,7 +976,7 @@ func TestInjector_PerfectMatch_UnaffectedByDownloadMissing(t *testing.T) {
 		DownloadMissingFiles: false, // Should not matter for perfect match.
 	}
 
-	res, err := injector.Inject(context.Background(), req)
+	res, err := inject(context.Background(), t, injector, req)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -928,6 +990,10 @@ func TestInjector_PerfectMatch_UnaffectedByDownloadMissing(t *testing.T) {
 	opts := manager.getAddOptions()
 	if opts["skip_checking"] != "true" {
 		t.Fatalf("expected skip_checking=true for perfect match, got %q", opts["skip_checking"])
+	}
+	// qBittorrent 4.3.2 and later read contentLayout, so the add sends no root_folder.
+	if _, ok := opts["root_folder"]; ok {
+		t.Fatalf("expected no root_folder option, got %+v", opts)
 	}
 
 	calls := settle.calls()
@@ -987,12 +1053,12 @@ func TestInjector_Inject_RunningPartial_RechecksAndResumesWhenComplete(t *testin
 			{Hash: "deadbeef", State: qbt.TorrentStateUploading, Progress: 1},
 			{Hash: "deadbeef", State: qbt.TorrentStateUploading, Progress: 1},
 		}}
-		injector := NewInjector(nil, manager, settle.start(t), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+		injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, settle.start(t), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		res, err := injector.Inject(ctx, req)
+		res, err := inject(ctx, t, injector, req)
 		if err != nil {
 			t.Fatalf("inject: %v", err)
 		}
@@ -1137,9 +1203,9 @@ func TestInjector_PartialHardlinkResumeLinkedFileCheck(t *testing.T) {
 					pieces:        tt.pieces,
 					pieceFailures: tt.pieceFailures,
 				}
-				injector := NewInjector(nil, &safeRecordingManager{}, settle.start(t), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
+				injector := NewInjector(nil, crossseed.NewAligner(nil), testAdder(&safeRecordingManager{}, settle.start(t), nil), nil, &fakeInstanceStore{instance: instance}, nil, testBackendPool(instance))
 
-				res, err := injector.Inject(t.Context(), req)
+				res, err := inject(t.Context(), t, injector, req)
 				if err != nil || !res.Success || res.Mode != injectModeHardlink {
 					t.Fatalf("inject: res=%+v err=%v", res, err)
 				}
@@ -1166,10 +1232,21 @@ func TestInjector_PartialReflinkResumeSkipsLinkedFileCheck(t *testing.T) {
 			polls:         partialSettle(qbt.TorrentStatePausedDl, qbt.TorrentStatePausedDl, qbt.TorrentStateDownloading, qbt.TorrentStateDownloading),
 			pieceFailures: 1 << 30,
 		}
-		injector := NewInjector(nil, &safeRecordingManager{}, settle.start(t), nil, nil, nil, nil)
-
-		if err := injector.triggerRecheckForPartialLinkTree(req, injectModeReflink); err != nil {
-			t.Fatalf("trigger recheck: %v", err)
+		// The test filesystem cannot clone, so the add gets the facts that a reflink add gives.
+		adder := testAdder(&safeRecordingManager{}, settle.start(t), nil)
+		check, refusal := adder.Check(t.Context(), req.InstanceID, crossseed.AddFacts{}, req.ParsedTorrent.InfoHash)
+		if refusal != nil {
+			t.Fatalf("pre-add check refused: %+v", refusal)
+		}
+		added := adder.Add(t.Context(), crossseed.AddRequest{
+			Check: check,
+			Facts: crossseed.AddFacts{
+				DirScan: true, LinkTree: true, PendingFiles: true, StartRunning: true,
+				LinkedPaths: linkedTorrentPaths(req, injectModeReflink),
+			},
+		})
+		if added.Outcome != crossseed.AddSettling {
+			t.Fatalf("add outcome = %v, want settling", added.Outcome)
 		}
 		time.Sleep(time.Minute)
 		synctest.Wait()
@@ -1198,5 +1275,55 @@ func TestValidateLinkTreeInstanceRefusesRemoteInstance(t *testing.T) {
 	}
 	if err := validateLinkTreeInstance(remote); err == nil {
 		t.Fatal("remote instance: got no error, want a refusal")
+	}
+}
+
+func TestInjector_Inject_RunsExternalProgramOnSuccessOnly(t *testing.T) {
+	addErr := errors.New("add failed")
+	tests := []struct {
+		name    string
+		perfect bool // drop the unmatched file so the add is a full match
+		refuse  bool // a partial link tree without 'Download missing files'
+		addErr  error
+		ran     bool
+	}{
+		{name: "added", perfect: true, ran: true},
+		{name: "refused", refuse: true},
+		{name: "add failed", perfect: true, addErr: addErr},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fx := newInjectFixture(t)
+			if tt.perfect {
+				fx.req.ParsedTorrent.Files = fx.req.ParsedTorrent.Files[:1]
+				fx.req.MatchResult.UnmatchedTorrentFiles = nil
+			}
+			fx.req.DownloadMissingFiles = !tt.refuse
+			var manager torrentManager = &safeRecordingManager{}
+			if tt.addErr != nil {
+				manager = &failingTorrentAdder{err: tt.addErr}
+			}
+			var runs []string
+			runner := func(_ context.Context, instanceID int, hashes []string) {
+				runs = append(runs, fmt.Sprintf("%d/%s", instanceID, strings.Join(hashes, ",")))
+			}
+			injector := NewInjector(nil, crossseed.NewAligner(manager), testAdder(manager, (&settleFake{}).idle(), runner), nil, &fakeInstanceStore{instance: fx.instance}, nil, testBackendPool(fx.instance))
+
+			res, err := inject(t.Context(), t, injector, fx.req)
+			if tt.ran && (err != nil || !res.Success) {
+				t.Fatalf("expected a successful add, got %+v, %v", res, err)
+			}
+			if !tt.ran && err == nil {
+				t.Fatalf("expected the add to fail, got %+v", res)
+			}
+
+			var want []string
+			if tt.ran {
+				want = []string{"1/deadbeef"}
+			}
+			if !slices.Equal(runs, want) {
+				t.Fatalf("External Program runs = %v, want %v", runs, want)
+			}
+		})
 	}
 }

@@ -219,24 +219,6 @@ func (b *slashBackend) Remove(_ context.Context, p string, opts fsops.RemoveOpti
 func TestPathDialect_RootBuilders(t *testing.T) {
 	t.Parallel()
 
-	saved, err := validDefaultSavePath(fsops.SlashPaths, "/data/torrents/")
-	require.NoError(t, err)
-	require.Equal(t, "/data/torrents", saved)
-
-	categories := map[string]qbt.Category{
-		"tv":     {},
-		"tv/hd":  {},
-		"movies": {SavePath: "//media/movies/"},
-		"music":  {SavePath: "music"},
-	}
-	for name, want := range map[string]string{
-		"tv/hd":  "/data/tv/hd",
-		"movies": "/media/movies",
-		"music":  "/data/music",
-	} {
-		require.Equal(t, want, qbittorrent.CategorySavePath(fsops.SlashPaths, name, categories, "/data", qbittorrent.CategoryPathRule{Nest: true}), name)
-	}
-
 	files := qbt.TorrentFiles{{Name: "Show/e1.mkv"}, {Name: "Show/e2.mkv"}}
 	require.Equal(t, "/data/real", actualSavePathFromContentPath(fsops.SlashPaths, "/data/tv", "/data/real/Show", files))
 	single := qbt.TorrentFiles{{Name: "a\\b.mkv"}}
@@ -289,16 +271,16 @@ func TestPathDialect_DiscAndPlainUnits(t *testing.T) {
 	protected := newTestProtected(t, fsops.SlashPaths, nil, tfm)
 	cache := map[string]discUnitDecision{}
 
-	unit, isDisc := discOrphanUnitWithContext(t.Context(), "/data", "/data/Movie/BDMV/STREAM/00000.m2ts", protected, cache, b)
+	unit, isDisc := discOrphanUnitWithContext(t.Context(), "/data", "/data/Movie/BDMV/STREAM/00000.m2ts", protected, cache, nil, b)
 	require.True(t, isDisc)
 	require.Equal(t, "/data/Movie", unit)
 
-	unit, isDisc = discOrphanUnitWithContext(t.Context(), "/data", "/data/d/f.mkv", protected, cache, b)
+	unit, isDisc = discOrphanUnitWithContext(t.Context(), "/data", "/data/d/f.mkv", protected, cache, nil, b)
 	require.False(t, isDisc)
 	require.Equal(t, "/data/d/f.mkv", unit)
 
 	// A disc parent holding owned files is not a disc root, so the unit stays at BDMV.
-	unit, isDisc = discOrphanUnitWithContext(t.Context(), "/data", "/data/Owned/BDMV/STREAM/00000.m2ts", protected, cache, b)
+	unit, isDisc = discOrphanUnitWithContext(t.Context(), "/data", "/data/Owned/BDMV/STREAM/00000.m2ts", protected, cache, nil, b)
 	require.True(t, isDisc)
 	require.Equal(t, "/data/Owned/BDMV", unit)
 
@@ -387,6 +369,66 @@ func TestPathDialect_FilesystemRootDeletesRefused(t *testing.T) {
 	require.NoError(t, withinScanRoot(win, `\\server\share\library`, `\\server\share\library\orphan.mkv`))
 }
 
+// winShareTestDialect adds Windows Dir to winRootTestDialect: Dir of a path
+// below a UNC share root is the root with its separator.
+type winShareTestDialect struct{ winRootTestDialect }
+
+func (w winShareTestDialect) Dir(p string) string {
+	p = w.Clean(p)
+	rest := strings.TrimPrefix(p, `\\`)
+	server, after, _ := strings.Cut(rest, `\`)
+	share, below, found := strings.Cut(after, `\`)
+	vol := `\\` + server + `\` + share
+	if !found {
+		return vol
+	}
+	i := strings.LastIndex(below, `\`)
+	if i <= 0 {
+		return vol + `\`
+	}
+	return vol + `\` + below[:i]
+}
+
+// Windows Clean leaves \\host\share without a separator, while Dir of a path
+// below it returns \\host\share\, so the share root must still cover it.
+func TestPruneNestedScanRoots_ShareRoot(t *testing.T) {
+	t.Parallel()
+
+	d := winShareTestDialect{winRootTestDialect{fsops.HostPaths}}
+	require.Equal(t, `\\host\share\`, d.Dir(`\\host\share\movies`))
+	require.Equal(t, `\\host\share\movies`, d.Dir(`\\host\share\movies\hd`))
+	b := &dialectLstatBackend{Backend: newTestBackend(), d: d}
+	for _, tc := range []struct {
+		roots, want []string
+	}{
+		{[]string{`\\host\share`, `\\host\share\movies`}, []string{`\\host\share`}},
+		{[]string{`\\host\share\movies`, `\\host\share`}, []string{`\\host\share`}},
+		{[]string{`\\host\share`, `\\host\share\movies\hd`}, []string{`\\host\share`}},
+		{[]string{`\\host\share\`, `\\host\share\movies`}, []string{`\\host\share\`}},
+		{[]string{`\\host\share`, `\\host\share\`}, []string{`\\host\share`}},
+		{[]string{`\\host\share`, `\\host\shared\movies`}, []string{`\\host\share`, `\\host\shared\movies`}},
+	} {
+		require.Equal(t, tc.want, pruneNestedScanRoots(t.Context(), tc.roots, b), "%v", tc.roots)
+	}
+
+	// The share root is checked like any other folder on the way up.
+	gone := &missingLstatBackend{dialectLstatBackend: b, missing: `\\host\share\`}
+	roots := []string{`\\host\share`, `\\host\share\movies`}
+	require.Equal(t, roots, pruneNestedScanRoots(t.Context(), roots, gone))
+}
+
+type missingLstatBackend struct {
+	*dialectLstatBackend
+	missing string
+}
+
+func (b *missingLstatBackend) Lstat(ctx context.Context, p string) (*fsops.LstatInfo, error) {
+	if p == b.missing {
+		return nil, fs.ErrNotExist
+	}
+	return b.dialectLstatBackend.Lstat(ctx, p)
+}
+
 func TestPruneNestedScanRoots_SharelessHostRootDoesNotLoop(t *testing.T) {
 	t.Parallel()
 
@@ -428,13 +470,7 @@ func TestExecuteScan_RemoteStoresSlashPaths(t *testing.T) {
 	stubSync(f.svc).getTorrentFilesBatch = func(context.Context, int, []string) (map[string]qbt.TorrentFiles, error) {
 		return map[string]qbt.TorrentFiles{"owned": {{Name: "owned.mkv"}, {Name: "a\\b.mkv"}}}, nil
 	}
-	stubSync(f.svc).getAppPreferences = func(context.Context, int) (qbt.AppPreferences, error) {
-		return qbt.AppPreferences{SavePath: "//srv/data"}, nil
-	}
-	// Without subcategories "x/y" is one name, and qBittorrent still saves it to x/y.
-	stubSync(f.svc).getCategories = func(context.Context, int) (map[string]qbt.Category, error) {
-		return map[string]qbt.Category{"x/y": {Name: "x/y"}}, nil
-	}
+	stubSync(f.svc).folders(qbittorrent.InstanceFolders{DefaultSavePath: "/srv/data", CategorySaveFolders: []string{"/srv/data/x/y"}})
 	_, err := f.store.UpsertSettings(t.Context(), &models.OrphanScanSettings{
 		InstanceID:          1,
 		IgnorePaths:         []string{"/srv/data/keep/"},
@@ -494,15 +530,14 @@ func TestPathDialect_DeletionRechecks(t *testing.T) {
 	}
 	live := 2
 	files := map[string]qbt.TorrentFiles{"owned": {{Name: "owned.mkv"}}, "nested": {{Name: "n.mkv"}}}
-	categories := map[string]qbt.Category{}
+	var categories []string
 	stubSync(f.svc).getAllTorrents = func(context.Context, int) ([]qbt.Torrent, error) { return torrents[:live], nil }
 	stubSync(f.svc).getTorrentFilesBatch = func(context.Context, int, []string) (map[string]qbt.TorrentFiles, error) {
 		return files, nil
 	}
-	stubSync(f.svc).getAppPreferences = func(context.Context, int) (qbt.AppPreferences, error) {
-		return qbt.AppPreferences{SavePath: "/srv/data"}, nil
+	stubSync(f.svc).instanceFolders = func(context.Context, int) (qbittorrent.InstanceFolders, error) {
+		return qbittorrent.InstanceFolders{DefaultSavePath: "/srv/data", CategorySaveFolders: categories}, nil
 	}
-	stubSync(f.svc).getCategories = func(context.Context, int) (map[string]qbt.Category, error) { return categories, nil }
 	settings := &models.OrphanScanSettings{
 		InstanceID:          1,
 		IgnorePaths:         []string{},
@@ -521,8 +556,7 @@ func TestPathDialect_DeletionRechecks(t *testing.T) {
 	live = len(torrents)
 	files["late"] = qbt.TorrentFiles{{Name: "late.mkv"}}
 	files["disc"] = qbt.TorrentFiles{{Name: "Movie/BDMV/STREAM/00000.m2ts"}}
-	categories["cat"] = qbt.Category{Name: "cat"}
-	categories["c\\x"] = qbt.Category{Name: "c\\x"}
+	categories = []string{"/srv/data/c\\x", "/srv/data/cat"}
 	settings.IgnorePaths = []string{"/srv/data/skip"}
 	_, err = f.store.UpsertSettings(t.Context(), settings)
 	require.NoError(t, err)
@@ -547,7 +581,7 @@ func TestPathDialect_DeletionRechecks(t *testing.T) {
 		"/srv/data/Movie":       "skipped: file is now in use by a torrent",
 		"/srv/data/skip/x.mkv":  "skipped: path is protected by ignore paths",
 		"/srv/data/skip":        "skipped: path is protected by ignore paths",
-		"/srv/data/cat":         "skipped: directory is now a category destination",
+		"/srv/data/cat":         "skipped: directory is now a category, download or monitored folder",
 	}, got)
 	require.Equal(t, map[string]int64{
 		"/srv/data/owned.mkv":                    1,
