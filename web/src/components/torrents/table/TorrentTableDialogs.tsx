@@ -12,13 +12,13 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/dialog"
-import type { useBulkActionWrappers } from "@/hooks/torrent-table/useBulkActionWrappers"
-import type { useCrossSeedOrchestration } from "@/hooks/torrent-table/useCrossSeedOrchestration"
+import type { useTorrentListActions } from "@/hooks/useTorrentListController"
 import type { useTorrentsList } from "@/hooks/useTorrentsList"
 import { api } from "@/lib/api"
 import { resolveTorrentTargetCapabilities } from "@/lib/instance-capabilities"
+import { actionTargetRequest, type ActionTarget } from "@/lib/torrent-selection"
 import { getCommonCategory, getCommonSavePath } from "@/lib/torrent-utils"
-import type { Category, CrossInstanceTorrent, InstanceResponse, Torrent, TorrentFilters } from "@/types"
+import type { Category, CrossInstanceTorrent, InstanceResponse } from "@/types"
 import { useQuery } from "@tanstack/react-query"
 import { type Dispatch, type SetStateAction, useMemo } from "react"
 import { useTranslation } from "react-i18next"
@@ -38,15 +38,13 @@ import {
   TmmConfirmDialog
 } from "../TorrentDialogs"
 
-type Wrappers = ReturnType<typeof useBulkActionWrappers>
+type Wrappers = ReturnType<typeof useTorrentListActions>
 
 export interface TorrentTableDialogsProps {
-  // Context + identity
   instanceId: number
-  instanceIds?: number[]
   instances?: InstanceResponse[]
-  contextHashes: string[]
-  contextTorrents: Torrent[]
+  // Every dialog acts on the Action target of the selection (ADR 0034).
+  actionTarget: ActionTarget
   isPending: boolean
 
   // Dialog open/close state
@@ -92,7 +90,7 @@ export interface TorrentTableDialogsProps {
   deleteCrossSeeds: boolean
   setDeleteCrossSeeds: Dispatch<SetStateAction<boolean>>
 
-  // Submit wrappers + meta
+  // Submit wrappers
   handleDeleteWrapper: Wrappers["handleDeleteWrapper"]
   handleSetCommentWrapper: Wrappers["handleSetCommentWrapper"]
   handleTagsWrapper: Wrappers["handleTagsWrapper"]
@@ -100,6 +98,7 @@ export interface TorrentTableDialogsProps {
   handleSetShareLimitWrapper: Wrappers["handleSetShareLimitWrapper"]
   handleSetSpeedLimitsWrapper: Wrappers["handleSetSpeedLimitsWrapper"]
   handleSetLocationWrapper: Wrappers["handleSetLocationWrapper"]
+  renameHash: Wrappers["renameHash"]
   handleRenameTorrentWrapper: Wrappers["handleRenameTorrentWrapper"]
   handleRenameFileWrapper: Wrappers["handleRenameFileWrapper"]
   handleRenameFolderWrapper: Wrappers["handleRenameFolderWrapper"]
@@ -107,19 +106,12 @@ export interface TorrentTableDialogsProps {
   handleReannounceWrapper: Wrappers["handleReannounceWrapper"]
   handleTmmConfirmWrapper: Wrappers["handleTmmConfirmWrapper"]
   proceedToLocationDialog: () => void
-  selectAllFilters: TorrentFilters | undefined
-  contextClientMeta: Wrappers["contextClientMeta"]
 
-  // Selection derivations
-  isAllSelected: boolean
-  effectiveSelectionCount: number
   deleteDialogTotalSize: number
   deleteDialogFormattedSize: string
-  selectAllExcludeHashes?: string[]
-  selectAllExcludedTargets: Array<{ instanceId: number; hash: string }>
 
   // Cross-seed
-  crossSeedWarning: ReturnType<typeof useCrossSeedOrchestration>["crossSeedWarning"]
+  crossSeedWarning: Wrappers["crossSeedWarning"]
   hasCrossSeedTag: boolean
 
   // Metadata / capabilities
@@ -129,8 +121,6 @@ export interface TorrentTableDialogsProps {
   isLoadingCategories: boolean
   allowSubcategories: boolean
   capabilities: ReturnType<typeof useTorrentsList>["capabilities"]
-  isCrossInstanceEndpoint?: boolean
-  effectiveSearch: string
 }
 
 /**
@@ -142,10 +132,8 @@ export interface TorrentTableDialogsProps {
  */
 export function TorrentTableDialogs({
   instanceId,
-  instanceIds,
   instances,
-  contextHashes,
-  contextTorrents,
+  actionTarget,
   isPending,
   showDeleteDialog,
   closeDeleteDialog,
@@ -193,6 +181,7 @@ export function TorrentTableDialogs({
   handleSetShareLimitWrapper,
   handleSetSpeedLimitsWrapper,
   handleSetLocationWrapper,
+  renameHash,
   handleRenameTorrentWrapper,
   handleRenameFileWrapper,
   handleRenameFolderWrapper,
@@ -200,14 +189,8 @@ export function TorrentTableDialogs({
   handleReannounceWrapper,
   handleTmmConfirmWrapper,
   proceedToLocationDialog,
-  selectAllFilters,
-  contextClientMeta,
-  isAllSelected,
-  effectiveSelectionCount,
   deleteDialogTotalSize,
   deleteDialogFormattedSize,
-  selectAllExcludeHashes,
-  selectAllExcludedTargets,
   crossSeedWarning,
   hasCrossSeedTag,
   availableTags,
@@ -216,29 +199,29 @@ export function TorrentTableDialogs({
   isLoadingCategories,
   allowSubcategories,
   capabilities,
-  isCrossInstanceEndpoint,
-  effectiveSearch,
 }: TorrentTableDialogsProps) {
   const { t } = useTranslation("torrents")
+  const { count, previewTorrents } = actionTarget
+  const isAllSelected = actionTarget.kind === "selectAll"
 
   const targetCapabilities = useMemo(() => resolveTorrentTargetCapabilities({
-    torrents: contextTorrents,
+    torrents: previewTorrents,
     fallbackInstanceId: instanceId,
-    instanceIds,
+    instanceIds: isAllSelected ? actionTarget.selectAll.instanceIds : undefined,
     isAllSelected,
     isAllInstancesView: instanceId <= 0,
     instances,
-  }), [contextTorrents, instanceId, instanceIds, isAllSelected, instances])
+  }), [previewTorrents, instanceId, actionTarget, isAllSelected, instances])
   const supportsQbittorrentOnlyActions = targetCapabilities.supportsQbittorrentOnlyActions
 
-  const shouldLoadRenameEntries = (showRenameFileDialog || showRenameFolderDialog) && Boolean(contextHashes[0])
+  const shouldLoadRenameEntries = (showRenameFileDialog || showRenameFolderDialog) && Boolean(renameHash)
 
   const {
     data: renameFileData,
     isLoading: renameEntriesLoading,
   } = useQuery({
-    queryKey: ["torrent-files", instanceId, contextHashes[0]],
-    queryFn: () => api.getTorrentFiles(instanceId, contextHashes[0]!, { refresh: true }),
+    queryKey: ["torrent-files", instanceId, renameHash],
+    queryFn: () => api.getTorrentFiles(instanceId, renameHash!, { refresh: true }),
     enabled: shouldLoadRenameEntries,
     staleTime: 0,
     gcTime: 5 * 60 * 1000,
@@ -278,7 +261,7 @@ export function TorrentTableDialogs({
             crossSeedWarning.reset()
           }
         }}
-        count={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        count={count}
         totalSize={deleteDialogTotalSize}
         formattedSize={deleteDialogFormattedSize}
         deleteFiles={deleteFiles}
@@ -293,17 +276,17 @@ export function TorrentTableDialogs({
         crossSeedWarning={crossSeedWarning}
         onConfirm={handleDeleteWrapper}
         isAllSelected={isAllSelected}
-        previewTorrents={contextTorrents}
+        previewTorrents={previewTorrents}
       />
 
       {supportsQbittorrentOnlyActions && <SetCommentDialog
         open={showCommentDialog}
         onOpenChange={setShowCommentDialog}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        hashCount={count}
         instanceId={
-          contextTorrents.length === 1? ((contextTorrents[0] as CrossInstanceTorrent).instanceId ?? instanceId): instanceId
+          previewTorrents.length === 1? ((previewTorrents[0] as CrossInstanceTorrent).instanceId ?? instanceId): instanceId
         }
-        torrentHash={contextHashes.length === 1 ? contextHashes[0] : undefined}
+        torrentHash={previewTorrents.length === 1 ? previewTorrents[0].hash : undefined}
         onConfirm={handleSetCommentWrapper}
         isPending={isPending}
       />}
@@ -312,19 +295,9 @@ export function TorrentTableDialogs({
         open={showTagsDialog}
         onOpenChange={setShowTagsDialog}
         availableTags={availableTags || []}
-        selectedTorrents={contextTorrents}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
-        selectionRequest={{
-          instanceId,
-          instanceIds: isCrossInstanceEndpoint ? instanceIds : undefined,
-          hashes: !isAllSelected ? contextHashes : undefined,
-          targets: !isAllSelected && (contextClientMeta.actionTargets?.length ?? 0) === contextHashes.length ? contextClientMeta.actionTargets : undefined,
-          selectAll: isAllSelected,
-          filters: selectAllFilters,
-          search: isAllSelected ? effectiveSearch : undefined,
-          excludeHashes: isAllSelected ? selectAllExcludeHashes : undefined,
-          excludeTargets: isAllSelected && isCrossInstanceEndpoint ? selectAllExcludedTargets : undefined,
-        }}
+        selectedTorrents={previewTorrents}
+        hashCount={count}
+        selectionRequest={{ instanceId, ...actionTargetRequest(actionTarget) }}
         onConfirm={handleTagsWrapper}
         isPending={isPending}
         isLoadingTags={isLoadingTags}
@@ -335,10 +308,10 @@ export function TorrentTableDialogs({
         open={showCategoryDialog}
         onOpenChange={setShowCategoryDialog}
         availableCategories={availableCategories || {}}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        hashCount={count}
         onConfirm={handleSetCategoryWrapper}
         isPending={isPending}
-        initialCategory={getCommonCategory(contextTorrents)}
+        initialCategory={getCommonCategory(previewTorrents)}
         isLoadingCategories={isLoadingCategories}
         useSubcategories={allowSubcategories}
       />}
@@ -347,7 +320,7 @@ export function TorrentTableDialogs({
       {supportsQbittorrentOnlyActions && <CreateAndAssignCategoryDialog
         open={showCreateCategoryDialog}
         onOpenChange={setShowCreateCategoryDialog}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        hashCount={count}
         onConfirm={handleSetCategoryWrapper}
         isPending={isPending}
       />}
@@ -355,8 +328,8 @@ export function TorrentTableDialogs({
       <ShareLimitDialog
         open={showShareLimitDialog}
         onOpenChange={setShowShareLimitDialog}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
-        torrents={contextTorrents}
+        hashCount={count}
+        torrents={previewTorrents}
         onConfirm={handleSetShareLimitWrapper}
         isPending={isPending}
         supportsSeedingTimeLimit={supportsQbittorrentOnlyActions}
@@ -367,8 +340,8 @@ export function TorrentTableDialogs({
       <SpeedLimitsDialog
         open={showSpeedLimitDialog}
         onOpenChange={setShowSpeedLimitDialog}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
-        torrents={contextTorrents}
+        hashCount={count}
+        torrents={previewTorrents}
         onConfirm={handleSetSpeedLimitsWrapper}
         isPending={isPending}
       />
@@ -377,10 +350,10 @@ export function TorrentTableDialogs({
       <SetLocationDialog
         open={showLocationDialog}
         onOpenChange={setShowLocationDialog}
-        hashCount={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        hashCount={count}
         onConfirm={handleSetLocationWrapper}
         isPending={isPending}
-        initialLocation={getCommonSavePath(contextTorrents)}
+        initialLocation={getCommonSavePath(previewTorrents)}
         instanceId={instanceId}
         capabilities={capabilities}
       />
@@ -389,7 +362,7 @@ export function TorrentTableDialogs({
       <RenameTorrentDialog
         open={showRenameTorrentDialog}
         onOpenChange={setShowRenameTorrentDialog}
-        currentName={contextTorrents[0]?.name}
+        currentName={previewTorrents[0]?.name}
         onConfirm={handleRenameTorrentWrapper}
         isPending={isPending}
       />
@@ -415,7 +388,7 @@ export function TorrentTableDialogs({
       <Dialog open={showRecheckDialog} onOpenChange={setShowRecheckDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("recheckDialog.title", { count: isAllSelected ? effectiveSelectionCount : contextHashes.length })}</DialogTitle>
+            <DialogTitle>{t("recheckDialog.title", { count })}</DialogTitle>
             <DialogDescription>
               {t("recheckDialog.description")}
             </DialogDescription>
@@ -435,7 +408,7 @@ export function TorrentTableDialogs({
       <Dialog open={showReannounceDialog} onOpenChange={setShowReannounceDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("reannounceDialog.title", { count: isAllSelected ? effectiveSelectionCount : contextHashes.length })}</DialogTitle>
+            <DialogTitle>{t("reannounceDialog.title", { count })}</DialogTitle>
             <DialogDescription>
               {t("reannounceDialog.description")}
             </DialogDescription>
@@ -455,7 +428,7 @@ export function TorrentTableDialogs({
       {supportsQbittorrentOnlyActions && <TmmConfirmDialog
         open={showTmmDialog}
         onOpenChange={setShowTmmDialog}
-        count={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        count={count}
         enable={pendingTmmEnable}
         onConfirm={handleTmmConfirmWrapper}
         isPending={isPending}
@@ -465,7 +438,7 @@ export function TorrentTableDialogs({
       <LocationWarningDialog
         open={showLocationWarningDialog}
         onOpenChange={setShowLocationWarningDialog}
-        count={isAllSelected ? effectiveSelectionCount : contextHashes.length}
+        count={count}
         onConfirm={proceedToLocationDialog}
         isPending={isPending}
       />

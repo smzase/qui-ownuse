@@ -194,7 +194,8 @@ export function useTorrentsList(
   // those rows for one transition frame can block the new view for seconds.
   const [allTorrentsScopeKey, setAllTorrentsScopeKey] = useState<string | null>(null)
   const [hasLoadedAll, setHasLoadedAll] = useState(false)
-  const [lastRequestTime, setLastRequestTime] = useState(0)
+  // A ref, not state: two scroll callbacks of one render must see the first request.
+  const lastRequestTimeRef = useRef(0)
   const [lastKnownTotal, setLastKnownTotal] = useState(0)
   const [lastProcessedPage, setLastProcessedPage] = useState(-1)
   const [lastStreamSnapshot, setLastStreamSnapshot] = useState<TorrentResponse | null>(null)
@@ -485,7 +486,7 @@ export function useTorrentsList(
   useEffect(() => {
     setAllTorrentsScopeKey(viewScopeKey)
     setCurrentPage(0)
-    setLastRequestTime(0)
+    lastRequestTimeRef.current = 0
     setAllTorrents([])
     setHasLoadedAll(false)
     setLastKnownTotal(0)
@@ -704,11 +705,11 @@ export function useTorrentsList(
     }
 
     // Throttle repeated scroll callbacks.
-    if (now - lastRequestTime < 500) {
+    if (now - lastRequestTimeRef.current < 500) {
       return
     }
 
-    setLastRequestTime(now)
+    lastRequestTimeRef.current = now
     if (isError && currentPage !== lastProcessedPage) {
       // Retry the pending page instead of skipping rows after a failed request.
       void refetch()

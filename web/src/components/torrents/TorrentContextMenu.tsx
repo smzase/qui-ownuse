@@ -21,6 +21,7 @@ import { api } from "@/lib/api"
 import { getLinuxIsoName, getLinuxSavePath, useIncognitoMode } from "@/lib/incognito"
 import { buildTorrentActionTargets } from "@/lib/torrent-action-targets"
 import type { TorrentFieldName, TorrentFieldSelection } from "@/lib/torrent-field-request"
+import type { ActionTarget } from "@/lib/torrent-selection"
 import { getToggleSelectionState, getTorrentDisplayHash, getTorrentFullPaths } from "@/lib/torrent-utils"
 import { resolveTorrentTargetCapabilities } from "@/lib/instance-capabilities"
 import { copyTextToClipboard } from "@/lib/utils"
@@ -63,28 +64,26 @@ export interface TorrentContextMenuProps {
   readOnly?: boolean
   torrent: Torrent
   isSelected: boolean
-  isAllSelected?: boolean
-  selectedHashes: string[]
-  selectedTorrents: Torrent[]
-  effectiveSelectionCount: number
+  // The Action target of the selection. Every action item acts on it.
+  actionTarget: ActionTarget
   onTorrentSelect?: (torrent: Torrent | null, initialTab?: string) => void
-  onAction: (action: TorrentAction, hashes: string[], options?: { enable?: boolean; targets?: Array<{ instanceId: number; hash: string }> }) => void
-  onPrepareDelete: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareTags: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareComment?: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareCategory: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareCreateCategory: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareShareLimit: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareSpeedLimits: (hashes: string[], torrents?: Torrent[]) => void
-  onPrepareRecheck: (hashes: string[], count?: number, torrents?: Torrent[]) => void
-  onPrepareReannounce: (hashes: string[], count?: number, torrents?: Torrent[]) => void
-  onPrepareLocation: (hashes: string[], torrents?: Torrent[], count?: number) => void
-  onPrepareTmm?: (hashes: string[], count: number, enable: boolean, torrents?: Torrent[]) => void
-  onPrepareRenameTorrent: (hashes: string[], torrents?: Torrent[]) => void
+  onAction: (action: TorrentAction, options?: { enable?: boolean }) => void
+  onPrepareDelete: () => void
+  onPrepareTags: () => void
+  onPrepareComment?: () => void
+  onPrepareCategory: () => void
+  onPrepareCreateCategory: () => void
+  onPrepareShareLimit: () => void
+  onPrepareSpeedLimits: () => void
+  onPrepareRecheck: () => void
+  onPrepareReannounce: () => void
+  onPrepareLocation: () => void
+  onPrepareTmm: (enable: boolean) => void
+  onPrepareRenameTorrent: () => void
   availableCategories?: Record<string, Category>
-  onSetCategory?: (category: string, hashes: string[], targets?: Array<{ instanceId: number; hash: string }>) => void
+  onSetCategory: (category: string) => void
   isPending?: boolean
-  onExport?: (hashes: string[], torrents: Torrent[]) => Promise<void> | void
+  onExport?: () => void
   isExporting?: boolean
   capabilities?: InstanceCapabilities
   useSubcategories?: boolean
@@ -107,10 +106,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
   readOnly = false,
   torrent,
   isSelected,
-  isAllSelected = false,
-  selectedHashes,
-  selectedTorrents,
-  effectiveSelectionCount,
+  actionTarget,
   onTorrentSelect,
   onAction,
   onPrepareDelete,
@@ -140,18 +136,15 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
   const { t } = useTranslation("torrents")
   const [incognitoMode] = useIncognitoMode()
 
-  // Determine if we should use selection or just this torrent
+  const isAllSelected = actionTarget.kind === "selectAll"
+  const effectiveSelectionCount = actionTarget.count
+  // A right-click selects the row first (#3368). A read-only table never selects,
+  // so its menu shows and copies the row that the user right-clicked.
   const useSelection = isSelected || isAllSelected
 
-  // Memoize hashes and torrents to avoid re-creating arrays on every render
-  const hashes = useMemo(() =>
-    useSelection ? selectedHashes : [torrent.hash],
-  [useSelection, selectedHashes, torrent.hash]
-  )
-
   const torrents = useMemo(() =>
-    useSelection ? selectedTorrents : [torrent],
-  [useSelection, selectedTorrents, torrent]
+    useSelection ? actionTarget.previewTorrents : [torrent],
+  [useSelection, actionTarget.previewTorrents, torrent]
   )
   const targetCapabilities = useMemo(() => resolveTorrentTargetCapabilities({
     torrents,
@@ -162,6 +155,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
     instances,
   }), [torrents, _instanceId, instanceIds, isAllSelected, instances])
   const supportsQbittorrentOnlyActions = targetCapabilities.supportsQbittorrentOnlyActions
+  const hashes = useMemo(() => torrents.map(t => t.hash), [torrents])
   const actionTargets = useMemo(() => buildTorrentActionTargets(torrents, _instanceId), [torrents, _instanceId])
 
   const targetInstanceIds = useMemo(() => {
@@ -184,7 +178,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
     })),
   })
 
-  const count = isAllSelected ? effectiveSelectionCount : hashes.length
+  const count = useSelection ? effectiveSelectionCount : 1
   const mixedLabel = count > 1 ? `${t("contextMenu.mixed")} (${count})` : t("contextMenu.mixed")
 
   // State for cross-seed search
@@ -331,12 +325,6 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
     }
   }, [copyToClipboard, torrents, hashes, actionTargets, isAllSelected, effectiveSelectionCount, onFetchTorrentField, t])
 
-  const handleExport = useCallback(() => {
-    if (!onExport) {
-      return
-    }
-    void onExport(hashes, torrents)
-  }, [hashes, onExport, torrents])
 
   // select-all: unloaded rows have unknown state, so offer both directions.
   const stateUnknownForSelection = isAllSelected && torrents.length < effectiveSelectionCount
@@ -346,34 +334,16 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
   const { allEnabled: allSeqDlEnabled, mixed: seqDlMixed } = getToggleSelectionState(torrents.map(t => t.seq_dl), stateUnknownForSelection)
 
   const handleQueueAction = useCallback((action: "topPriority" | "increasePriority" | "decreasePriority" | "bottomPriority") => {
-    onAction(action as TorrentAction, hashes, { targets: actionTargets })
-  }, [onAction, hashes, actionTargets])
+    onAction(action)
+  }, [onAction])
 
   const handleForceStartToggle = useCallback((enable: boolean) => {
-    onAction(TORRENT_ACTIONS.FORCE_START, hashes, { enable, targets: actionTargets })
-  }, [onAction, hashes, actionTargets])
+    onAction(TORRENT_ACTIONS.FORCE_START, { enable })
+  }, [onAction])
 
   const handleSeqDlToggle = useCallback((enable: boolean) => {
-    onAction(TORRENT_ACTIONS.TOGGLE_SEQUENTIAL_DOWNLOAD, hashes, { enable, targets: actionTargets })
-  }, [onAction, hashes, actionTargets])
-
-  const handleSetCategory = useCallback((category: string) => {
-    if (onSetCategory) {
-      onSetCategory(category, hashes, actionTargets)
-    }
-  }, [onSetCategory, hashes, actionTargets])
-
-  const handleTmmToggle = useCallback((enable: boolean) => {
-    if (onPrepareTmm) {
-      onPrepareTmm(hashes, count, enable, torrents)
-    } else {
-      onAction(TORRENT_ACTIONS.TOGGLE_AUTO_TMM, hashes, { enable, targets: actionTargets })
-    }
-  }, [onPrepareTmm, onAction, hashes, count, torrents, actionTargets])
-
-  const handleLocationClick = useCallback(() => {
-    onPrepareLocation(hashes, torrents, count)
-  }, [onPrepareLocation, hashes, torrents, count])
+    onAction(TORRENT_ACTIONS.TOGGLE_SEQUENTIAL_DOWNLOAD, { enable })
+  }, [onAction])
 
   const supportsTorrentExport = supportsQbittorrentOnlyActions && (capabilities?.supportsTorrentExport ?? true)
   const supportsSetComment = supportsQbittorrentOnlyActions && (capabilities?.supportsSetComment ?? (
@@ -417,7 +387,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem
-              onClick={() => onAction(TORRENT_ACTIONS.RESUME, hashes, { targets: actionTargets })}
+              onClick={() => onAction(TORRENT_ACTIONS.RESUME)}
               disabled={isPending}
             >
               <Play className="mr-2 h-4 w-4" />
@@ -450,21 +420,21 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
               </ContextMenuItem>
             ))}
             <ContextMenuItem
-              onClick={() => onAction(TORRENT_ACTIONS.PAUSE, hashes, { targets: actionTargets })}
+              onClick={() => onAction(TORRENT_ACTIONS.PAUSE)}
               disabled={isPending}
             >
               <Pause className="mr-2 h-4 w-4" />
               {t("contextMenu.pause")} {count > 1 ? `(${count})` : ""}
             </ContextMenuItem>
             <ContextMenuItem
-              onClick={() => onPrepareRecheck(hashes, count, torrents)}
+              onClick={() => onPrepareRecheck()}
               disabled={isPending}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               {t("contextMenu.forceRecheck")} {count > 1 ? `(${count})` : ""}
             </ContextMenuItem>
             <ContextMenuItem
-              onClick={() => onPrepareReannounce(hashes, count, torrents)}
+              onClick={() => onPrepareReannounce()}
               disabled={isPending}
             >
               <Radio className="mr-2 h-4 w-4" />
@@ -539,7 +509,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             )}
             {(canCrossSeedSearch || onManualCrossSeed || (onFilterChange && supportsInstanceScopedActions)) && <ContextMenuSeparator />}
             <ContextMenuItem
-              onClick={() => onPrepareTags(hashes, torrents)}
+              onClick={() => onPrepareTags()}
               disabled={isPending}
             >
               <Tag className="mr-2 h-4 w-4" />
@@ -549,13 +519,13 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
               type="context"
               hashCount={count}
               availableCategories={availableCategories}
-              onSetCategory={handleSetCategory}
+              onSetCategory={onSetCategory}
               isPending={isPending}
               currentCategory={torrent.category}
               useSubcategories={useSubcategories}
             />}
             <ContextMenuItem
-              onClick={handleLocationClick}
+              onClick={onPrepareLocation}
               disabled={isPending}
             >
               <FolderOpen className="mr-2 h-4 w-4" />
@@ -565,7 +535,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
               <RenameSubmenu
                 type="context"
                 hashCount={count}
-                onRenameTorrent={() => onPrepareRenameTorrent(hashes, torrents)}
+                onRenameTorrent={() => onPrepareRenameTorrent()}
                 onRenameFile={() => onTorrentSelect?.(torrent, "content")}
                 onRenameFolder={() => onTorrentSelect?.(torrent, "content")}
                 isPending={isPending}
@@ -574,7 +544,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             )}
             {supportsSetComment && onPrepareComment && (
               <ContextMenuItem
-                onClick={() => onPrepareComment(hashes, torrents)}
+                onClick={() => onPrepareComment()}
                 disabled={isPending}
               >
                 <MessageSquare className="mr-2 h-4 w-4" />
@@ -583,14 +553,14 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             )}
             <ContextMenuSeparator />
             <ContextMenuItem
-              onClick={() => onPrepareShareLimit(hashes, torrents)}
+              onClick={() => onPrepareShareLimit()}
               disabled={isPending}
             >
               <Sprout className="mr-2 h-4 w-4" />
               {t("contextMenu.setShareLimits")} {count > 1 ? `(${count})` : ""}
             </ContextMenuItem>
             <ContextMenuItem
-              onClick={() => onPrepareSpeedLimits(hashes, torrents)}
+              onClick={() => onPrepareSpeedLimits()}
               disabled={isPending}
             >
               <Gauge className="mr-2 h-4 w-4" />
@@ -600,14 +570,14 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             {supportsQbittorrentOnlyActions && (mixed ? (
               <>
                 <ContextMenuItem
-                  onClick={() => handleTmmToggle(true)}
+                  onClick={() => onPrepareTmm(true)}
                   disabled={isPending}
                 >
                   <Sparkles className="mr-2 h-4 w-4" />
                   {t("contextMenu.enableTmm")} {mixedLabel}
                 </ContextMenuItem>
                 <ContextMenuItem
-                  onClick={() => handleTmmToggle(false)}
+                  onClick={() => onPrepareTmm(false)}
                   disabled={isPending}
                 >
                   <Settings2 className="mr-2 h-4 w-4" />
@@ -616,7 +586,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
               </>
             ) : (
               <ContextMenuItem
-                onClick={() => handleTmmToggle(!allEnabled)}
+                onClick={() => onPrepareTmm(!allEnabled)}
                 disabled={isPending}
               >
                 {allEnabled ? (
@@ -636,7 +606,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             {supportsInstanceScopedActions && <ExternalProgramsSubmenu instanceId={_instanceId} hashes={hashes} />}
             {supportsTorrentExport && (
               <ContextMenuItem
-                onClick={handleExport}
+                onClick={onExport}
                 disabled={isExporting}
               >
                 <Download className="mr-2 h-4 w-4" />
@@ -665,7 +635,7 @@ export const TorrentContextMenu = memo(function TorrentContextMenu({
             </ContextMenuSub>
             <ContextMenuSeparator />
             <ContextMenuItem
-              onClick={() => onPrepareDelete(hashes, torrents)}
+              onClick={() => onPrepareDelete()}
               disabled={isPending}
               className="text-destructive"
             >
