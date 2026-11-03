@@ -882,7 +882,8 @@
       "fewerIndexers": "Vyhledávejte s méně indexery",
       "useRss": "Použijte funkci RSS automatizace pro trvalé křížové sdílení",
       "checkIndexers": "Zkontrolujte help stránky indexerů a zjistěte, které jsou omezené"
-    }
+    },
+    "routedTo": "Křížová sdílení jdou do instance pro křížové sdílení {{instance}}."
   },
   "columnFilter": {
     "filterColumn": "Filtrovat {{column}}",
@@ -1147,7 +1148,6 @@
     "closePanel": "Zavřít detailní panel",
     "unknownError": "Neznámá chyba",
     "toast": {
-      "copied": "{{type}} zkopírováno do schránky",
       "copyFailed": "Nepodařilo se zkopírovat do schránky",
       "peersAdded": "Peerové přidány úspěšně",
       "peersFailed": "Nepodařilo se přidat peery: {{error}}",
@@ -1204,20 +1204,14 @@
       "loadedSummary_other": "{{count}} shody torrentů nalezeny napříč všemi instancemi",
       "deleteMatches": "Smazat shody ({{count}})",
       "deleteThisTorrent": "Smazat tento torrent",
-      "checkingMoreInstances": "Kontrolují se další instance...",
-      "infoHashMatch": "Info Hash",
-      "infoHashDescription": "Přesně stejný torrent (stejný info hash)",
-      "savePathMatch": "Složka pro uložení",
-      "savePathDescription": "Stejná složka pro uložení a stejný název souboru",
-      "selectTorrent": "Vybrat {{name}}"
+      "selectTorrent": "Vybrat {{name}}",
+      "openTorrent": "Otevřít {{name}}"
     },
     "sections": {
       "generalInformation": "Obecné informace",
       "transferStatistics": "Přenosové statistiky",
-      "speed": "Rychlost",
       "queueManagement": "Správa fronty",
       "timeInformation": "Časové informace",
-      "timestamps": "Časové značky",
       "activeTrackers": "Aktivní trackery",
       "connectedPeers": "Připojení peerů",
       "fileContents": "Obsah souborů"
@@ -1244,10 +1238,7 @@
       "added": "Přidáno",
       "completed": "Dokončeno",
       "created": "Vytvořeno",
-      "leechers": "Stahovatelé",
-      "peerProgress": "Postup stahování peeru",
-      "connection": "Připojení:",
-      "flags": "Vlajky:"
+      "leechers": "Stahovatelé"
     },
     "counts": {
       "trackers_one": "{{count}} tracker",
@@ -1256,9 +1247,6 @@
       "connectedPeers_one": "{{count}} peer připojen",
       "connectedPeers_few": "{{count}} peeři připojeni",
       "connectedPeers_other": "{{count}} peerů připojených",
-      "httpSources_one": "{{count}} zdroj",
-      "httpSources_few": "{{count}} zdroje",
-      "httpSources_other": "{{count}} zdroje",
       "selectedFiles": "{{selected}} z {{total}} vybraných",
       "files_one": "{{count}} soubor",
       "files_few": "{{count}} soubory",
@@ -1267,7 +1255,6 @@
     "values": {
       "normal": "Normální",
       "queued": "V frontě {{state}}",
-      "seeder": "Sdílící",
       "unknownClient": "Neznámý klient"
     },
     "actions": {
@@ -1276,14 +1263,12 @@
       "selectAll": "Všechny",
       "selectNone": "Žádné"
     },
-    "peer": {
-      "flagLabel": "Vlajka {{flag}}"
-    },
     "emptyStates": {
       "noFilesFound": "Nenalezen žádný soubor"
     },
     "selectAll": "Vybrat vše",
-    "deselectAll": "Vybrat žádné"
+    "deselectAll": "Vybrat žádné",
+    "trackerMessageHidden": "Zpráva trackeru je v režimu Incognito skrytá"
   },
   "generalTab": {
     "name": "Název:",
@@ -1438,11 +1423,7 @@
       }
     },
     "noMatches": "Na jiných instancích nebyly nalezeny shodné torrenty",
-    "loadFailed": "Nepodařilo se zkontrolovat shody cross-seedu. Pro nový pokus stránku znovu načtěte.",
-    "toast": {
-      "savePathCopied": "Složka pro uložení zkopírována",
-      "copyFailed": "Kopírování selhalo"
-    }
+    "loadFailed": "Nepodařilo se zkontrolovat shody cross-seedu. Pro nový pokus stránku znovu načtěte."
   },
   "addTorrentDialog": {
     "title": "Přidat nový torrent",
@@ -1751,6 +1732,7 @@
     "tags": "Štítky",
     "newTagPlaceholder": "Zadejte štítek a stiskněte Enter",
     "savePath": "Cesta uložení (skutečné umístění)",
+    "routedTo": "Křížové sdílení jde do instance pro křížové sdílení {{instance}}.",
     "cancel": "Zrušit",
     "apply": "Přidat cross-seed",
     "applying": "Přidávání...",

@@ -36,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from "@/components/ui/alert-dialog"
+import { CopyButton } from "@/components/ui/copy-button"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -68,12 +69,12 @@ import { APIError, api } from "@/lib/api"
 
 import { withBasePath } from "@/lib/base-url"
 import { canRegisterProtocolHandler, getMagnetHandlerRegistrationGuidance, registerMagnetHandler } from "@/lib/protocol-handler"
-import { copyTextToClipboard, formatBytes, formatDuration } from "@/lib/utils"
+import { formatBytes, formatDuration } from "@/lib/utils"
 import type { SettingsSearch } from "@/routes/_authenticated/settings"
 import type { ApplicationInfo, Instance, TorznabSearchCacheStats, User } from "@/types"
 import { useForm } from "@tanstack/react-form"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Copy, ExternalLink, Loader2, Plus, RefreshCw, Share2, Trash2, Upload } from "lucide-react"
+import { ExternalLink, Loader2, Plus, RefreshCw, Share2, Trash2, Upload } from "lucide-react"
 import type { FormEvent, ReactNode } from "react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -371,20 +372,7 @@ function ApiKeysManager({ authMode, authModeLoading }: ApiKeysManagerProps) {
                       <code className="flex-1 rounded bg-muted px-2 py-1 text-sm font-mono break-all">
                         {newKey.key}
                       </code>
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            await copyTextToClipboard(newKey.key)
-                            toast.success(t("apiKeys.toasts.copied"))
-                          } catch {
-                            toast.error(t("apiKeys.toasts.copyFailed"))
-                          }
-                        }}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </Button>
+                      <CopyButton value={newKey.key} label={t("apiKeys.newKey.apiKey")} iconClassName="h-4 w-4" />
                     </div>
                     <p className="mt-2 text-sm text-destructive">
                       {t("apiKeys.newKey.warning")}
@@ -906,12 +894,10 @@ interface ApplicationSectionProps {
   title: string
   description: string
   fields: ApplicationField[]
-  onCopy: (value: string, label: string) => Promise<void> | void
   headerAction?: ReactNode
 }
 
-function ApplicationSection({ title, description, fields, onCopy, headerAction }: ApplicationSectionProps) {
-  const { t } = useTranslation("settings")
+function ApplicationSection({ title, description, fields, headerAction }: ApplicationSectionProps) {
   return (
     <Card>
       <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -942,17 +928,11 @@ function ApplicationSection({ title, description, fields, onCopy, headerAction }
                     </div>
                     {field.action}
                     {field.copyValue && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                        onClick={() => {
-                          void onCopy(field.copyValue || "", field.label)
-                        }}
-                        title={t("application.copyTitle", { label: field.label })}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
+                      <CopyButton
+                        value={field.copyValue}
+                        label={field.label}
+                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      />
                     )}
                   </div>
                 </dd>
@@ -1188,18 +1168,6 @@ function ApplicationInfoPanel({ openUpdate, onUpdateOpened }: { openUpdate: bool
     { label: t("application.storage.dataDir"), value: info.dataDir || "—", copyValue: info.dataDir || "", monospace: true },
   ] : []
 
-  const handleCopy = useCallback(async (value: string, label: string) => {
-    if (!value) {
-      return
-    }
-
-    try {
-      await copyTextToClipboard(value)
-      toast.success(t("application.toasts.copied", { label }))
-    } catch {
-      toast.error(t("application.toasts.copyFailed", { label: label.toLowerCase() }))
-    }
-  }, [t])
 
   return (
     <div className="space-y-4">
@@ -1232,7 +1200,6 @@ function ApplicationInfoPanel({ openUpdate, onUpdateOpened }: { openUpdate: bool
             title={t("application.build.title")}
             description={t("application.build.description")}
             fields={buildFields}
-            onCopy={handleCopy}
             headerAction={(
               <div className="flex gap-2">
                 {canManageUpdates && <RestartButton />}
@@ -1257,19 +1224,16 @@ function ApplicationInfoPanel({ openUpdate, onUpdateOpened }: { openUpdate: bool
             title={t("application.runtime.title")}
             description={t("application.runtime.description")}
             fields={runtimeFields}
-            onCopy={handleCopy}
           />
           <ApplicationSection
             title={t("application.auth.title")}
             description={t("application.auth.description")}
             fields={authFields}
-            onCopy={handleCopy}
           />
           <ApplicationSection
             title={t("application.storage.title")}
             description={t("application.storage.description")}
             fields={storageFields}
-            onCopy={handleCopy}
           />
         </>
       )}

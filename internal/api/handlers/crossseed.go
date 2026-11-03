@@ -24,6 +24,7 @@ import (
 	"github.com/autobrr/qui/internal/models"
 	"github.com/autobrr/qui/internal/services/crossseed"
 	"github.com/autobrr/qui/internal/services/crossseed/gazellemusic"
+	"github.com/autobrr/qui/internal/services/crossseedroute"
 	"github.com/autobrr/qui/internal/services/jackett"
 )
 
@@ -33,6 +34,8 @@ type CrossSeedHandler struct {
 	completionStore    *models.InstanceCrossSeedCompletionStore
 	instanceStore      *models.InstanceStore
 	seasonPackRunStore *models.SeasonPackRunStore
+	routes             *crossseedroute.Service
+	torrents           crossseedroute.TorrentReader
 	gazelleBaseURL     string // tests point the Gazelle key check at a stub tracker
 }
 
@@ -508,12 +511,16 @@ func NewCrossSeedHandler(
 	completionStore *models.InstanceCrossSeedCompletionStore,
 	instanceStore *models.InstanceStore,
 	seasonPackRunStore *models.SeasonPackRunStore,
+	routes *crossseedroute.Service,
+	torrents crossseedroute.TorrentReader,
 ) *CrossSeedHandler {
 	return &CrossSeedHandler{
 		service:            service,
 		completionStore:    completionStore,
 		instanceStore:      instanceStore,
 		seasonPackRunStore: seasonPackRunStore,
+		routes:             routes,
+		torrents:           torrents,
 	}
 }
 
@@ -583,6 +590,13 @@ func (h *CrossSeedHandler) Routes(
 		r.With(withUserContext).Route("/completion", func(r chi.Router) {
 			r.With(instanceAccessMiddleware).Get("/{instanceID}", h.GetInstanceCompletionSettings)
 			r.With(instanceAccessMiddleware).Put("/{instanceID}", h.UpdateInstanceCompletionSettings)
+		})
+		r.With(withUserContext).Route("/routes", func(r chi.Router) {
+			r.Get("/", h.ListCrossSeedRoutes)
+			r.Get("/{instanceID}", h.GetCrossSeedRoute)
+			r.Put("/{instanceID}", h.SaveCrossSeedRoute)
+			r.Delete("/{instanceID}", h.ClearCrossSeedRoute)
+			r.Post("/{instanceID}/test", h.TestCrossSeedRoute)
 		})
 		r.Route("/season-pack", func(r chi.Router) {
 			r.With(withAPIKeyUserContext).Post("/check", h.SeasonPackCheck)
@@ -848,6 +862,10 @@ func (h *CrossSeedHandler) ApplyTorrentSearchResults(w http.ResponseWriter, r *h
 	instanceID, err := strconv.Atoi(instanceIDStr)
 	if err != nil || instanceID <= 0 {
 		RespondError(w, http.StatusBadRequest, "instanceID must be a positive integer")
+		return
+	}
+	if _, err := h.scopeCrossSeedInstanceIDs(r, []int{instanceID}); err != nil {
+		respondCrossSeedInstanceScopeError(w, err)
 		return
 	}
 
@@ -1881,7 +1899,7 @@ func (h *CrossSeedHandler) ListSeasonPackRuns(w http.ResponseWriter, r *http.Req
 
 	limit := 20
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 200 {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= 400 {
 			limit = parsed
 		}
 	}

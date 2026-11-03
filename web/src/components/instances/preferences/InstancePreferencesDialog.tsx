@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+import { CrossSeedDeleteNotice, useCrossSeedDeleteCheck } from "@/components/cross-seed/RouteProtectionConfirm"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -187,6 +188,7 @@ export function InstancePreferencesDialog({
   const displayInstanceName = currentInstance?.name ?? instanceName
   const isTransmission = currentInstance?.clientType === "transmission"
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const deleteCheck = useCrossSeedDeleteCheck(instanceId, showDeleteDialog)
   const handleDeleted = () => {
     // Close dialog when instance is deleted
     onOpenChange(false)
@@ -305,12 +307,13 @@ export function InstancePreferencesDialog({
               {t("preferences.dialog.deleteDialog.description", { name: displayInstanceName })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <CrossSeedDeleteNotice check={deleteCheck} />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("preferences.dialog.deleteDialog.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={isDeleting}
+              disabled={isDeleting || deleteCheck.pending}
             >
               {t("preferences.dialog.deleteDialog.confirm")}
             </AlertDialogAction>

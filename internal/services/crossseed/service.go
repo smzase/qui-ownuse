@@ -42,7 +42,6 @@ import (
 	"github.com/autobrr/rls"
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/singleflight"
@@ -54,6 +53,7 @@ import (
 	"github.com/autobrr/qui/internal/services/activity"
 	"github.com/autobrr/qui/internal/services/arr"
 	"github.com/autobrr/qui/internal/services/crossseed/gazellemusic"
+	"github.com/autobrr/qui/internal/services/crossseedroute"
 	"github.com/autobrr/qui/internal/services/externalprograms"
 	"github.com/autobrr/qui/internal/services/filesmanager"
 	"github.com/autobrr/qui/internal/services/jackett"
@@ -129,6 +129,7 @@ type qbittorrentSync interface {
 	SetTags(ctx context.Context, instanceID int, hashes []string, tags string) error
 	GetCategories(ctx context.Context, instanceID int) (map[string]qbt.Category, error)
 	CreateCategory(ctx context.Context, instanceID int, name string, path string) error
+	GetDirectoryContentCtx(ctx context.Context, instanceID int, dirPath string, mode qbt.DirectoryContentMode, withMetadata bool) (any, error)
 }
 
 // dedupCacheEntry stores cached deduplication results to avoid recomputation.
@@ -159,85 +160,97 @@ type ServiceMetrics struct {
 	GetMatchTypeSizeMatch     prometheus.Counter
 }
 
-// NewServiceMetrics creates and registers Prometheus metrics for the cross-seed service
+// NewServiceMetrics creates Prometheus metrics for the cross-seed service without registering them.
 func NewServiceMetrics() *ServiceMetrics {
 	return &ServiceMetrics{
-		FindCandidatesDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+		FindCandidatesDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "qui_crossseed_find_candidates_duration_seconds",
 			Help:    "Time spent finding cross-seed candidates",
 			Buckets: prometheus.DefBuckets,
 		}),
-		FindCandidatesTotal: promauto.NewCounter(prometheus.CounterOpts{
+		FindCandidatesTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_find_candidates_total",
 			Help: "Total number of find candidates requests",
 		}),
-		CrossSeedDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+		CrossSeedDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "qui_crossseed_cross_seed_duration_seconds",
 			Help:    "Time spent performing cross-seed operations",
 			Buckets: prometheus.DefBuckets,
 		}),
-		CrossSeedTotal: promauto.NewCounter(prometheus.CounterOpts{
+		CrossSeedTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_cross_seed_total",
 			Help: "Total number of cross-seed operations",
 		}),
-		CrossSeedSuccessRate: promauto.NewCounterVec(prometheus.CounterOpts{
+		CrossSeedSuccessRate: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "qui_crossseed_success_total",
 			Help: "Total number of successful cross-seed operations by status",
 		}, []string{"status"}),
-		CacheHitRate: promauto.NewGauge(prometheus.GaugeOpts{
+		CacheHitRate: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "qui_crossseed_cache_hit_rate",
 			Help: "Cache hit rate for various caches (0.0 to 1.0)",
 		}),
-		ActiveAsyncOperations: promauto.NewGauge(prometheus.GaugeOpts{
+		ActiveAsyncOperations: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "qui_crossseed_active_async_operations",
 			Help: "Number of active async filtering operations",
 		}),
-		TorrentFilesCacheSize: promauto.NewGauge(prometheus.GaugeOpts{
+		TorrentFilesCacheSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "qui_crossseed_torrent_files_cache_size",
 			Help: "Number of entries in torrent files cache",
 		}),
-		SearchResultCacheSize: promauto.NewGauge(prometheus.GaugeOpts{
+		SearchResultCacheSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "qui_crossseed_search_result_cache_size",
 			Help: "Number of entries in search result cache",
 		}),
-		AsyncFilteringCacheSize: promauto.NewGauge(prometheus.GaugeOpts{
+		AsyncFilteringCacheSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "qui_crossseed_async_filtering_cache_size",
 			Help: "Number of entries in async filtering cache",
 		}),
-		IndexerDomainCacheSize: promauto.NewGauge(prometheus.GaugeOpts{
+		IndexerDomainCacheSize: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "qui_crossseed_indexer_domain_cache_size",
 			Help: "Number of entries in indexer domain cache",
 		}),
-		ReleaseCacheParseDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+		ReleaseCacheParseDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "qui_crossseed_release_parse_duration_seconds",
 			Help:    "Time spent parsing release names",
 			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
 		}),
-		GetMatchTypeDuration: promauto.NewHistogram(prometheus.HistogramOpts{
+		GetMatchTypeDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name:    "qui_crossseed_get_match_type_duration_seconds",
 			Help:    "Time spent determining file match types",
 			Buckets: prometheus.DefBuckets,
 		}),
-		GetMatchTypeCalls: promauto.NewCounter(prometheus.CounterOpts{
+		GetMatchTypeCalls: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_get_match_type_calls_total",
 			Help: "Total number of getMatchType calls",
 		}),
-		GetMatchTypeNoMatch: promauto.NewCounter(prometheus.CounterOpts{
+		GetMatchTypeNoMatch: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_get_match_type_no_match_total",
 			Help: "Total number of getMatchType calls that resulted in no match",
 		}),
-		GetMatchTypeExactMatch: promauto.NewCounter(prometheus.CounterOpts{
+		GetMatchTypeExactMatch: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_get_match_type_exact_match_total",
 			Help: "Total number of getMatchType calls that resulted in exact match",
 		}),
-		GetMatchTypePartialMatch: promauto.NewCounter(prometheus.CounterOpts{
+		GetMatchTypePartialMatch: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_get_match_type_partial_match_total",
 			Help: "Total number of getMatchType calls that resulted in partial match",
 		}),
-		GetMatchTypeSizeMatch: promauto.NewCounter(prometheus.CounterOpts{
+		GetMatchTypeSizeMatch: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "qui_crossseed_get_match_type_size_match_total",
 			Help: "Total number of getMatchType calls that resulted in size match",
 		}),
+	}
+}
+
+// Collectors returns the cross-seed collectors that qui updates, for the metrics registry.
+func (m *ServiceMetrics) Collectors() []prometheus.Collector {
+	return []prometheus.Collector{
+		m.GetMatchTypeDuration,
+		m.GetMatchTypeCalls,
+		m.GetMatchTypeNoMatch,
+		m.GetMatchTypeExactMatch,
+		m.GetMatchTypePartialMatch,
+		m.GetMatchTypeSizeMatch,
 	}
 }
 
@@ -343,7 +356,11 @@ type Service struct {
 	// mediaIDCacheStore backs the MKV-metadata external-ID fallback; nil
 	// disables it. analyzeMediaFile is replaceable in tests; nil selects the
 	// real MediaInfo analyzer.
-	mediaIDCacheStore         mediaIDCache
+	mediaIDCacheStore mediaIDCache
+	crossSeedRoutes   *crossseedroute.Service
+	// visibleRetryDelay, when set, is the wait between the listings of a
+	// visibility check. Tests set it; zero means the 5-second default.
+	visibleRetryDelay         time.Duration
 	analyzeMediaFile          func(ctx context.Context, path string) (mediainfo.Report, error)
 	trackerCustomizationStore trackerCustomizationProvider
 	releaseCache              *ReleaseCache
@@ -394,6 +411,8 @@ type Service struct {
 
 	// Cached torrent file metadata for repeated analyze/search calls.
 	torrentFilesCache *ttlcache.Cache[string, qbt.TorrentFiles]
+	// localReadMemo remembers the file-based reads of local torrents.
+	localReadMemo localReadMemo
 
 	// Cached deduplication results to avoid recomputing on every search run.
 	// Key: "dedup:{instanceID}:{torrentCount}:{hashSignature}" where hashSignature
@@ -569,6 +588,9 @@ func NewService(
 	}
 	svc.adder = NewAdder(syncManager, blocklistStore, settler, svc.ResumeBudgetBytes, svc.RunExternalProgram)
 	svc.aligner = NewAligner(syncManager)
+	if syncManager != nil {
+		syncManager.SetFilesChangedHandler(svc.forgetLocalRead)
+	}
 	svc.partialPool = &partialPoolCoordinator{
 		automationStore: automationStore,
 		instanceStore:   instanceStore,
@@ -579,6 +601,9 @@ func NewService(
 
 	return svc
 }
+
+// MetricsCollectors returns the cross-seed collectors to register on the metrics endpoint.
+func (s *Service) MetricsCollectors() []prometheus.Collector { return s.metrics.Collectors() }
 
 // NewServiceWithAutomationStore creates a minimal service for settings-only callers.
 func NewServiceWithAutomationStore(automationStore *models.CrossSeedStore) *Service {
@@ -599,6 +624,11 @@ func (s *Service) SetMediaIDCacheStore(store *models.MediaIDCacheStore) {
 		return
 	}
 	s.mediaIDCacheStore = store
+}
+
+// SetCrossSeedRoutes wires the cross-seed routes (ADR 0035). Safe to call once at startup.
+func (s *Service) SetCrossSeedRoutes(routes *crossseedroute.Service) {
+	s.crossSeedRoutes = routes
 }
 
 // SetActivityPublisher wires the qui server-event hub so cross-seed automation and
@@ -1601,6 +1631,7 @@ func (s *Service) UpdateAutomationSettings(ctx context.Context, settings *models
 	if err != nil {
 		return nil, fmt.Errorf("persist automation settings: %w", err)
 	}
+	s.forgetLocalReads()
 
 	s.signalAutomationWake()
 	s.partialPool.wake(partialPoolWake{})
@@ -2724,6 +2755,7 @@ func (s *Service) executeCompletionSearch(ctx context.Context, instanceID int, t
 	if torrent == nil {
 		return nil
 	}
+	ctx = withRouteRun(ctx)
 	if settings == nil {
 		settings = models.DefaultCrossSeedAutomationSettings()
 	}
@@ -3013,7 +3045,8 @@ func (s *Service) StartSearchRun(ctx context.Context, opts SearchRunOptions) (*m
 		s.activityPublisher.Publish(activity.Event{Kind: activity.KindCrossSeedSearch, InstanceID: opts.InstanceID})
 	}
 
-	go s.searchRunLoop(runCtx, state)
+	// One Library Scan run shares one memory of failed route folders.
+	go s.searchRunLoop(withRouteRun(runCtx), state)
 
 	return storedRun, nil
 }
@@ -3158,6 +3191,25 @@ func (s *Service) validateSearchRunOptions(ctx context.Context, opts *SearchRunO
 		return fmt.Errorf("%w: instance %d not found", ErrInvalidRequest, opts.InstanceID)
 	}
 
+	// Each match of a run on a Source instance goes to its Cross-seed instance,
+	// and a failed add keeps the match out of the search until its cooldown ends.
+	if s.crossSeedRoutes != nil {
+		// The stored route is enough: the start needs only its Cross-seed instance.
+		route, err := s.crossSeedRoutes.CrossSeedRouteStore.Get(ctx, instance.ID)
+		if err != nil {
+			return fmt.Errorf("read cross-seed route: %w", err)
+		}
+		if route != nil {
+			err := s.crossSeedRoutes.CheckAvailable(ctx, route.CrossSeedInstanceID, true)
+			if errors.Is(err, crossseedroute.ErrUnavailable) {
+				return fmt.Errorf("%w: %w", ErrInvalidRequest, crossseedroute.CrossSeedUnavailable(err))
+			}
+			if err != nil {
+				return fmt.Errorf("check Cross-seed instance: %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -3239,6 +3291,7 @@ func (s *Service) signalAutomationWake() {
 }
 
 func (s *Service) executeAutomationRun(ctx context.Context, run *models.CrossSeedRun, settings *models.CrossSeedAutomationSettings, opts AutomationRunOptions) (*models.CrossSeedRun, error) {
+	ctx = withRouteRun(ctx)
 	if settings == nil {
 		settings = models.DefaultCrossSeedAutomationSettings()
 	}
@@ -3740,12 +3793,14 @@ func (s *Service) processAutomationCandidate(ctx context.Context, run *models.Cr
 
 	for _, instanceResult := range resp.Results {
 		mapped := models.CrossSeedRunResult{
-			InstanceID:   instanceResult.InstanceID,
-			InstanceName: instanceResult.InstanceName,
-			IndexerName:  result.Indexer,
-			Success:      instanceResult.Success,
-			Status:       instanceResult.Status,
-			Message:      instanceResult.Message,
+			InstanceID:            instanceResult.InstanceID,
+			InstanceName:          instanceResult.InstanceName,
+			IndexerName:           result.Indexer,
+			Success:               instanceResult.Success,
+			Status:                instanceResult.Status,
+			Message:               instanceResult.Message,
+			CrossSeedInstanceID:   instanceResult.CrossSeedInstanceID,
+			CrossSeedInstanceName: instanceResult.CrossSeedInstanceName,
 		}
 		if instanceResult.MatchedTorrent != nil {
 			hash := instanceResult.MatchedTorrent.Hash
@@ -4506,6 +4561,9 @@ func (s *Service) findCandidates(ctx context.Context, req *FindCandidatesRequest
 // It finds existing 100% complete torrents that match the content and adds the new torrent
 // paused to the same location with matching category and ATM state
 func (s *Service) CrossSeed(ctx context.Context, req *CrossSeedRequest) (*CrossSeedResponse, error) {
+	// A webhook or manual request is one Trigger run. A run that started its
+	// memory of failed route folders earlier keeps it.
+	ctx = withRouteRun(ctx)
 	if req.TorrentData == "" {
 		return nil, errors.New("torrent_data is required")
 	}
@@ -4596,11 +4654,16 @@ func (s *Service) CrossSeed(ctx context.Context, req *CrossSeedRequest) (*CrossS
 		}
 	}
 
-	// Process each instance with matching candidates
+	// Process each instance with matching candidates. addedTo holds the
+	// instances that an add gave the torrent in this call, so that a routed add
+	// does not add it to its Cross-seed instance a second time.
+	addedTo := map[int]struct{}{}
+	s.sortSourceInstancesFirst(ctx, candidatesResp.Candidates)
 	for _, candidate := range candidatesResp.Candidates {
-		result := s.processCrossSeedCandidate(ctx, candidate, torrentBytes, torrentHash, meta.HashV2, meta.Name, req, sourceRelease, meta.Files, meta.Info)
+		result := s.processCrossSeedCandidate(ctx, candidate, torrentBytes, torrentHash, meta.HashV2, meta.Name, req, sourceRelease, meta.Files, meta.Info, addedTo)
 		response.Results = append(response.Results, result)
 		if result.Success {
+			addedTo[cmp.Or(result.CrossSeedInstanceID, result.InstanceID)] = struct{}{}
 			response.Success = true
 			if candidate.titleRescue {
 				response.titleRescueUsed = true
@@ -4709,6 +4772,12 @@ func (s *Service) maybeDivertSeasonPack(ctx context.Context, req *CrossSeedReque
 		// Name the assembled pack so run results and notification samples show what was added.
 		MatchedTorrent: &MatchedTorrent{Name: torrentName},
 	}
+	if resp.AddedInstanceID != 0 && resp.AddedInstanceID != resp.InstanceID {
+		added.CrossSeedInstanceID = resp.AddedInstanceID
+		if inst, instErr := s.instanceStore.Get(ctx, resp.AddedInstanceID); instErr == nil && inst != nil {
+			added.CrossSeedInstanceName = inst.Name
+		}
+	}
 	for i := range response.Results {
 		if response.Results[i].InstanceID == resp.InstanceID {
 			added.InstanceName = response.Results[i].InstanceName
@@ -4731,6 +4800,8 @@ func (s *Service) invokeSeasonPackApply(ctx context.Context, req *SeasonPackAppl
 
 // AutobrrApply adds a torrent provided by autobrr to the specified instance using cross-seed logic.
 func (s *Service) AutobrrApply(ctx context.Context, req *AutobrrApplyRequest) (*CrossSeedResponse, error) {
+	// One webhook is one Trigger run, also when it tries several sources.
+	ctx = withRouteRun(ctx)
 	startedAt := time.Now().UTC()
 	if req == nil {
 		return nil, fmt.Errorf("%w: request is required", ErrInvalidRequest)
@@ -4965,18 +5036,34 @@ func (s *Service) processCrossSeedCandidate(
 	sourceRelease *rls.Release,
 	sourceFiles qbt.TorrentFiles,
 	torrentInfo *metainfo.Info,
+	addedTo map[int]struct{},
 ) InstanceCrossSeedResult {
-	result := InstanceCrossSeedResult{
-		InstanceID:   candidate.InstanceID,
-		InstanceName: candidate.InstanceName,
-		Success:      false,
-		Status:       "error",
+	// A route sends the add to the Cross-seed instance (ADR 0035). Its rule
+	// check, with the availability check, runs before the Pre-add check, which
+	// then runs for the Cross-seed instance.
+	route, routeErr := s.routeOf(ctx, candidate.InstanceID)
+	candidate.route = route
+	result := candidate.newResult("error", "")
+	if routeErr != nil {
+		result.Status, result.Message = routeFailure(routeErr)
+		return result
 	}
 
-	check, refusal := s.adder.Check(ctx, candidate.InstanceID, AddFacts{}, torrentHash, torrentHashV2)
+	receiverID, receiverName := candidate.receiver()
+	if _, added := addedTo[receiverID]; added {
+		// The torrent list of the instance can lag behind the add.
+		result.Status = "exists"
+		result.Message = "Torrent already added to " + receiverName + " in this run"
+		return result
+	}
+	check, refusal := s.adder.Check(ctx, receiverID, AddFacts{}, torrentHash, torrentHashV2)
 	if refusal != nil {
 		result.Status = refusal.Status
 		result.Message = refusal.Message
+		if candidate.route != nil && refusal.Message == existsInThisInstance {
+			// The result names the instance that holds the match, not this one.
+			result.Message = "Torrent already exists in Cross-seed instance " + receiverName
+		}
 		if refusal.Existing != nil {
 			result.MatchedTorrent = &MatchedTorrent{
 				Hash:     refusal.Existing.Hash,
@@ -5094,7 +5181,20 @@ func (s *Service) processCrossSeedCandidate(
 	// Determine mode selection: reflink vs hardlink vs reuse.
 	// Mode selection must happen BEFORE safety checks because reflink mode bypasses safety
 	// checks that exist to protect the *original* files (reflinks protect originals via CoW).
-	instance, instanceErr := s.instanceStore.Get(ctx, candidate.InstanceID)
+	var instance *models.Instance
+	var instanceErr error
+	if candidate.route != nil {
+		if manualUnvalidated {
+			result.Message = "A routed cross-seed needs hardlink or reflink mode, and an unvalidated Manual match cannot use it"
+			return result
+		}
+		if status, message := s.loadSource(ctx, candidate.route, candidate.InstanceID); status != "" {
+			return candidate.newResult(status, message)
+		}
+		instance = candidate.route.source
+	} else {
+		instance, instanceErr = s.instanceStore.Get(ctx, candidate.InstanceID)
+	}
 	// An unvalidated Manual match has no validated file correspondence to link
 	// (zero overlap would fail materialization outright), so it always takes the
 	// regular paused add + recheck path.
@@ -5316,6 +5416,12 @@ func (s *Service) processCrossSeedCandidate(
 		}
 		facts.LinkFallbackRecheck = facts.LinkFallbackRecheck || hlResult.RequiresFullRecheck
 		facts.LinkFallback = facts.LinkFallback || hlResult.FallbackToRegular
+	}
+	if candidate.route != nil {
+		// No path reaches this today. It stays so that a new link mode exit
+		// cannot make a regular add that shares the Source instance's files (ADR 0035).
+		result.Message = "A routed cross-seed never falls back to a regular add"
+		return result
 	}
 
 	// If link mode fell through (Used=false), a category may already have been created
@@ -8098,6 +8204,7 @@ func torrentSearchResultInfoHashes(infoHashV1, infoHashV2 string) []string {
 
 // ApplyTorrentSearchResults downloads and adds torrents selected from search results for cross-seeding.
 func (s *Service) ApplyTorrentSearchResults(ctx context.Context, instanceID int, hash string, req *ApplyTorrentSearchRequest) (*ApplyTorrentSearchResponse, error) {
+	ctx = withRouteRun(ctx)
 	if req == nil || len(req.Selections) == 0 {
 		return nil, fmt.Errorf("%w: no selections provided", ErrInvalidRequest)
 	}
@@ -9639,6 +9746,12 @@ func (s *Service) executeCrossSeedSearchAttempt(ctx context.Context, instanceID 
 		result.Message = fmt.Sprintf("cross-seed failed: %v", err)
 		return result, fmt.Errorf("cross-seed failed: %w", err)
 	}
+	for _, instanceResult := range resp.Results {
+		if instanceResult.CrossSeedInstanceID != 0 {
+			result.CrossSeedInstanceID, result.CrossSeedInstanceName = instanceResult.CrossSeedInstanceID, instanceResult.CrossSeedInstanceName
+			break
+		}
+	}
 
 	if resp.Success {
 		result.Status = models.CrossSeedSearchResultStatusAdded
@@ -10432,7 +10545,7 @@ func (s *Service) notifyWebhookApply(ctx context.Context, req *AutobrrApplyReque
 				if result.Success {
 					addedResults = append(addedResults, result)
 				}
-			case "error", "no_save_path", "invalid_content_path", "pause_failed", "alignment_failed", "hardlink_error", "reflink_error":
+			case "error", "no_save_path", "invalid_content_path", "pause_failed", "alignment_failed", "hardlink_error", "reflink_error", crossSeedUnavailableStatus, crossSeedCannotSeeStatus:
 				failedResults = append(failedResults, result)
 			}
 		}
@@ -11550,20 +11663,65 @@ func (s *Service) CheckWebhook(ctx context.Context, req *WebhookCheckRequest) (*
 	m := s.matcher()
 	announcedGroup := m.normalizedGroupSiteIdentity(incomingRelease)
 
-	// Search each instance for matching torrents
+	// Apply webhook source filters if configured
+	hasWebhookSourceFilters := len(settings.WebhookSourceCategories) > 0 ||
+		len(settings.WebhookSourceTags) > 0 ||
+		len(settings.WebhookSourceExcludeCategories) > 0 ||
+		len(settings.WebhookSourceExcludeTags) > 0
+
+	// Start the file reads of all instances before the first wait, so a slow
+	// instance does not use up the wait of the others. The waits share one
+	// budget, so the check answers inside the time that autobrr waits. Each
+	// open check holds its own copy of a torrent list, so the check keeps the
+	// lists only when no instance waits for a file read.
+	pendingReads := make(map[int]*pendingLocalReads, len(instances))
+	views := make(map[int][]qbittorrent.CrossInstanceTorrentView, len(instances))
+	waits := false
 	for _, instance := range instances {
-		// Get all torrents from this instance using cached sync data
 		torrentsView, err := s.syncManager.GetCachedInstanceTorrents(ctx, instance.ID)
 		if err != nil {
 			log.Warn().Err(err).Int("instanceID", instance.ID).Msg("Failed to get torrents from instance")
 			continue
 		}
+		// An errored source with recovery off is no match, so its files are not read.
+		pendingReads[instance.ID] = s.requestLocalReads(ctx, instance.ID, func(yield func(*qbt.Torrent) bool) {
+			for torrent := range viewTorrents(torrentsView) {
+				if !s.shouldSkipErroredTorrent(torrent.State) &&
+					(!hasWebhookSourceFilters || matchesWebhookSourceFilters(torrent, settings)) && !yield(torrent) {
+					return
+				}
+			}
+		})
+		views[instance.ID] = torrentsView
+		waits = waits || pendingReads[instance.ID].hasFills()
+	}
+	if waits {
+		clear(views)
+	}
+	readsCtx, cancelReads := context.WithTimeout(ctx, localReadWait)
+	defer cancelReads()
 
-		// Apply webhook source filters if configured
-		hasWebhookSourceFilters := len(settings.WebhookSourceCategories) > 0 ||
-			len(settings.WebhookSourceTags) > 0 ||
-			len(settings.WebhookSourceExcludeCategories) > 0 ||
-			len(settings.WebhookSourceExcludeTags) > 0
+	// Search each instance for matching torrents
+	for _, instance := range instances {
+		pending, ok := pendingReads[instance.ID]
+		if !ok {
+			continue
+		}
+		sourceReads := pending.wait(readsCtx)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		torrentsView, ok := views[instance.ID]
+		delete(views, instance.ID)
+		if !ok {
+			// Get all torrents from this instance using cached sync data
+			var err error
+			torrentsView, err = s.syncManager.GetCachedInstanceTorrents(ctx, instance.ID)
+			if err != nil {
+				log.Warn().Err(err).Int("instanceID", instance.ID).Msg("Failed to get torrents from instance")
+				continue
+			}
+		}
 
 		// Log webhook filter settings once per instance
 		log.Debug().
@@ -11592,16 +11750,11 @@ func (s *Service) CheckWebhook(ctx context.Context, req *WebhookCheckRequest) (*
 			Int("torrentCount", len(torrentsView)).
 			Msg("Webhook check: scanning instance torrents for metadata matches")
 
-		sourceReads := s.readLocalTorrents(ctx, instance.ID, func(yield func(*qbt.Torrent) bool) {
-			for torrent := range viewTorrents(torrentsView) {
-				if (!hasWebhookSourceFilters || matchesWebhookSourceFilters(torrent, settings)) && !yield(torrent) {
-					return
-				}
-			}
-		})
-
 		// Check each torrent for a match - iterate directly over torrentsView to avoid copying
 		for _, torrentView := range torrentsView {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			// Guard against nil torrentView or nil torrentView.Torrent
 			if torrentView.Torrent == nil {
 				continue
@@ -12267,7 +12420,8 @@ func (s *Service) linkPresetDir(
 	case "by-tracker":
 		return d.Join(baseDir, pathutil.SanitizePathSegment(s.resolveTrackerDisplayName(ctx, incomingTrackerDomain, req)))
 	case "by-instance":
-		return d.Join(baseDir, pathutil.SanitizePathSegment(candidate.InstanceName))
+		_, name := candidate.receiver()
+		return d.Join(baseDir, pathutil.SanitizePathSegment(name))
 	default: // "flat" or unknown
 		return baseDir
 	}
@@ -12340,8 +12494,14 @@ func (s *Service) buildCategorySavePath(
 	req *CrossSeedRequest,
 ) string {
 	presetDir := s.linkPresetDir(ctx, d, instance, baseDir, candidate, incomingTrackerDomain, req)
-	if presetDir == baseDir { // flat
-		return baseDir
+	flat := presetDir == baseDir
+	if candidate.route != nil {
+		// Map before normalizePath, which needs no dialect but loses the one
+		// that the map needs. A link tree maps under the same row first.
+		presetDir, _ = crossseedroute.ToCrossSeed(d, candidate.route.rows, baseDir, presetDir)
+	}
+	if flat {
+		return presetDir
 	}
 	return normalizePath(presetDir)
 }

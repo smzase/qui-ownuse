@@ -123,17 +123,19 @@
     "cancel": "Скасувати",
     "close": "Закрити",
     "create": "Створити",
-    "copyPath": "Копіювати шлях",
     "scrollToTop": "Прокрутити вгору",
     "search": "Пошук",
-    "select": "Вибрати"
+    "select": "Вибрати",
+    "copyValue": "Копіювати {{label}}"
   },
   "placeholders": {
     "search": "Пошук...",
     "selectItems": "Вибрати елементи..."
   },
   "feedback": {
-    "noResultsFound": "Результатів не знайдено."
+    "noResultsFound": "Результатів не знайдено.",
+    "copied": "{{label}} скопійовано в буфер обміну",
+    "copyFailed": "Не вдалося скопіювати в буфер обміну"
   },
   "errors": {
     "unknown": "Невідома помилка",
@@ -272,5 +274,8 @@
     },
     "perSecond": "{{unit}}/с",
     "valueWithUnit": "{{value}} {{unit}}"
+  },
+  "labels": {
+    "path": "Шлях"
   }
 }

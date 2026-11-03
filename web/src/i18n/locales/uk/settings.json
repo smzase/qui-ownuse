@@ -146,7 +146,6 @@
       "proxyUrl": "Проксі URL",
       "showProxyUrl": "Показати проксі URL",
       "hideProxyUrl": "Приховати проксі URL",
-      "copyProxyUrl": "Копіювати проксі URL",
       "done": "Готово"
     },
     "deleteDialog": {
@@ -162,9 +161,7 @@
       "deleted": "Ключ клієнта API успішно видалено",
       "deleteFailed": "Не вдалося видалити клієнтський ключ API: {{error}}",
       "clientNameRequired": "Потрібне ім'я клієнта",
-      "selectInstance": "Виберіть екземпляр qBittorrent",
-      "proxyCopied": "Проксі URL скопійовано в буфер обміну",
-      "copyFailed": "Не вдалося скопіювати в буфер обміну"
+      "selectInstance": "Виберіть екземпляр qBittorrent"
     }
   },
   "apiKeys": {
@@ -190,7 +187,8 @@
     "newKey": {
       "label": "Ваш новий ключ API",
       "warning": "Збережіть цей ключ зараз. Ви більше не зможете його побачити.",
-      "done": "Готово"
+      "done": "Готово",
+      "apiKey": "Ключ API"
     },
     "deleteDialog": {
       "title": "Видалити ключ API?",
@@ -202,9 +200,7 @@
       "created": "Ключ API створено успішно",
       "createFailed": "Не вдалося створити ключ API",
       "deleted": "Ключ API успішно видалено",
-      "deleteFailed": "Не вдалося видалити ключ API",
-      "copied": "Ключ API скопійовано в буфер обміну",
-      "copyFailed": "Не вдалося скопіювати в буфер обміну"
+      "deleteFailed": "Не вдалося видалити ключ API"
     }
   },
   "externalPrograms": {
@@ -1054,11 +1050,6 @@
         "success": "Оновлення встановлено. Перезапуск qui...",
         "failed": "Не вдалося встановити оновлення"
       }
-    },
-    "copyTitle": "Копіювати {{label}}",
-    "toasts": {
-      "copied": "{{label}} скопійовано в буфер обміну",
-      "copyFailed": "Не вдалося скопіювати {{label}}"
     }
   }
 }

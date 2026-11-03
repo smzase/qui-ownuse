@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+import { CrossSeedDeleteNotice, useCrossSeedDeleteCheck } from "@/components/cross-seed/RouteProtectionConfirm"
 import { InstanceErrorDisplay } from "@/components/instances/InstanceErrorDisplay"
 import {
   AlertDialog,
@@ -99,6 +100,7 @@ export function InstanceCard({
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showSharingDialog, setShowSharingDialog] = useState(false)
   const [shareUserId, setShareUserId] = useState("")
+  const deleteCheck = useCrossSeedDeleteCheck(instance.id, showDeleteDialog)
   const displayUrl = instance.host
   const canManageInstance = user?.role === "admin" || user?.id === instance.ownerId
 
@@ -434,11 +436,13 @@ export function InstanceCard({
               {t("card.deleteDialog.description", { name: instance.name })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <CrossSeedDeleteNotice check={deleteCheck} />
           <AlertDialogFooter>
             <AlertDialogCancel>{t("card.deleteDialog.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteCheck.pending}
             >
               {t("card.deleteDialog.confirm")}
             </AlertDialogAction>

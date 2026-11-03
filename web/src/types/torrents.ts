@@ -124,7 +124,8 @@ export interface Torrent {
   progress: number
   ratio: number
   ratio_limit: number
-  reannounce: number
+  // The server leaves it out before qBittorrent 5.0, which does not send it in the torrent list.
+  reannounce?: number
   save_path: string
   seeding_time: number
   seeding_time_limit: number
@@ -277,6 +278,8 @@ export interface TorrentResponse {
   trackerHealthSupported?: boolean
   isCrossInstance?: boolean
   instanceMeta?: InstanceMeta  // Real-time instance health from SSE
+  /** Web API version of each instance in the response, keyed by instance ID; "" while unknown. */
+  webAPIVersions?: Record<number, string>
   /** Frontend-assembled only: number of pages combined into this loaded-window response. */
   windowPageCount?: number
 }

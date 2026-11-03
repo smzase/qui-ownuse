@@ -123,17 +123,19 @@
     "cancel": "Annulla",
     "close": "Chiudi",
     "create": "Crea",
-    "copyPath": "Copia percorso",
     "scrollToTop": "Scorri in alto",
     "search": "Cerca",
-    "select": "Seleziona"
+    "select": "Seleziona",
+    "copyValue": "Copia {{label}}"
   },
   "placeholders": {
     "search": "Cerca...",
     "selectItems": "Seleziona elementi..."
   },
   "feedback": {
-    "noResultsFound": "Nessun risultato trovato."
+    "noResultsFound": "Nessun risultato trovato.",
+    "copied": "{{label}} copiato negli appunti",
+    "copyFailed": "Impossibile copiare negli appunti"
   },
   "errors": {
     "unknown": "Errore sconosciuto",
@@ -258,5 +260,8 @@
     },
     "perSecond": "{{unit}}/s",
     "valueWithUnit": "{{value}} {{unit}}"
+  },
+  "labels": {
+    "path": "Percorso"
   }
 }

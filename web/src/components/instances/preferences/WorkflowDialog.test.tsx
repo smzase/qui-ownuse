@@ -4,7 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { Automation, FilesystemCapabilities } from "@/types"
@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
   const t = (key: string) => key
   return {
     query: { data: undefined },
+    auth: { user: { role: "admin", permissions: [] } },
     instancesQuery: { data: [{ id: 1, clientType: "qbittorrent", capabilities: { read: false, identity: false, write: false, content: false } }] as unknown[], isLoading: false, error: null },
     translation: { t, i18n: { t, language: "en" } },
     error: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...await importOriginal<typeof import("@tanstack/react-query")>(),
   useQuery: ({ queryKey }: { queryKey: string[] }) => queryKey[0] === "instances" ? mocks.instancesQuery : mocks.query,
 }))
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => mocks.auth }))
 vi.mock("@/hooks/useInstanceMetadata", () => ({ useInstanceMetadata: () => mocks.query }))
 vi.mock("@/hooks/useTrackerIcons", () => ({ useTrackerIcons: () => mocks.query }))
 vi.mock("react-i18next", async (importOriginal) => ({
@@ -44,6 +46,8 @@ vi.mock("@/lib/api", () => ({
 const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView")
 
 beforeEach(() => {
+  mocks.auth.user.role = "admin"
+  mocks.instancesQuery.data = [{ id: 1, clientType: "qbittorrent", capabilities: noCapabilities }]
   vi.stubGlobal("ResizeObserver", class {
     observe() {}
     unobserve() {}
@@ -83,7 +87,9 @@ describe("WorkflowDialog category validation", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={rule} />
+        <TooltipProvider>
+          <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={rule} />
+        </TooltipProvider>
       </QueryClientProvider>
     )
 
@@ -129,11 +135,13 @@ describe("WorkflowDialog include hardlinks", () => {
     // The setting is off here, so only the capability can offer the option.
     { name: "an instance with the trusted identity capability", hasLocalFilesystemAccess: false, filesystemMode: "local", capabilities: { ...noCapabilities, read: true, identity: true, trustedIdentity: true }, enabled: true },
   ])("follows the trusted identity capability for $name", ({ hasLocalFilesystemAccess, filesystemMode, capabilities, enabled }) => {
-    mocks.instancesQuery.data = [{ id: 1, hasLocalFilesystemAccess, filesystemMode, capabilities }]
+    mocks.instancesQuery.data = [{ id: 1, clientType: "qbittorrent", hasLocalFilesystemAccess, filesystemMode, capabilities }]
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={deleteRule} />
+        <TooltipProvider>
+          <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={deleteRule} />
+        </TooltipProvider>
       </QueryClientProvider>
     )
 
@@ -155,7 +163,9 @@ describe("WorkflowDialog tracker pattern", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={{ ...rule, trackerPattern }} />
+        <TooltipProvider>
+          <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={{ ...rule, trackerPattern }} />
+        </TooltipProvider>
       </QueryClientProvider>
     )
 
@@ -174,6 +184,102 @@ describe("WorkflowDialog tracker pattern", () => {
     expect(payload.trackerPattern).toBe(trackerPattern)
     expect(payload).not.toHaveProperty("trackerDomains")
     client.clear()
+  })
+})
+
+function renderDialog(dialogRule: Automation, clientType = "qbittorrent") {
+  // Radix scrolls focused select options; jsdom has no layout.
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() })
+  mocks.instancesQuery.data = [{ id: 1, clientType, capabilities: noCapabilities }]
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <WorkflowDialog open onOpenChange={() => {}} instanceId={1} rule={dialogRule} />
+      </TooltipProvider>
+    </QueryClientProvider>
+  )
+  return client
+}
+
+async function optionLabels(trigger: HTMLElement) {
+  fireEvent.keyDown(trigger, { key: "ArrowDown" })
+  await screen.findAllByRole("option")
+  return screen.getAllByRole("option").map(option => option.textContent)
+}
+
+// Labels in actionRunOrder, without delete.
+const combinableLabels = ["speedLimits", "shareLimits", "pause", "resume", "recheck", "reannounce", "autoManagement", "tag", "category", "move", "externalProgram", "exportToInstance"]
+  .map(action => key(`actions.${action}`))
+
+describe("WorkflowDialog action order", () => {
+  it("renders the action sections in run order", () => {
+    const client = renderDialog({
+      ...rule,
+      conditions: {
+        schemaVersion: "1",
+        speedLimits: { enabled: true, uploadKiB: 100 },
+        shareLimits: { enabled: true, ratioLimit: 2 },
+        pause: { enabled: true },
+        resume: { enabled: true },
+        recheck: { enabled: true },
+        reannounce: { enabled: true },
+        autoManagement: { enabled: true },
+        tags: [{ enabled: true, tags: ["ordered"], mode: "add" }],
+        category: { enabled: true, category: "sorted" },
+        move: { enabled: true, path: "/moved" },
+        externalProgram: { enabled: true, programId: 1 },
+        exportToInstance: { enabled: true, targetInstanceId: 2, savePath: "" },
+      },
+    })
+
+    const headings = ["actions.speedLimits", "actions.shareLimits", "actions.pause", "actions.resume", "actions.recheck", "actions.reannounce", "actions.autoManagement", "tag.title", "actions.category", "actions.move", "actions.externalProgram", "export.title"]
+      .map(suffix => screen.getByText(key(suffix)))
+    const inDomOrder = [...headings].sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
+    expect(inDomOrder.map(heading => heading.textContent)).toEqual(headings.map(heading => heading.textContent))
+    client.clear()
+  })
+
+  it("lists actions in run order when a rule has none, with delete last", async () => {
+    const client = renderDialog({ ...rule, conditions: { schemaVersion: "1" } })
+
+    expect(await optionLabels(screen.getByText(key("actions.selectAction")))).toEqual([...combinableLabels, key("actions.deleteStandalone")])
+    client.clear()
+  })
+
+  it("offers the remaining actions in run order", async () => {
+    const client = renderDialog(rule)
+
+    expect(await optionLabels(screen.getByText(key("actions.addAction")))).toEqual(combinableLabels.filter(label => label !== key("actions.pause")))
+    client.clear()
+  })
+
+  it("keeps Transmission actions and external program permissions separate", async () => {
+    mocks.auth.user.role = "user"
+    const client = renderDialog({ ...rule, conditions: { schemaVersion: "1" } }, "transmission")
+
+    expect(await optionLabels(screen.getByText(key("actions.selectAction")))).toEqual([
+      "speedLimits", "shareLimits", "pause", "resume", "recheck", "reannounce", "tag", "move", "deleteStandalone",
+    ].map(action => key(`actions.${action}`)))
+    client.clear()
+  })
+
+  it("explains the run order on the Actions label", () => {
+    // The tooltip opens on tap only where "ontouchstart" exists; jsdom has no touch support.
+    const touchWindow = window as Window & { ontouchstart?: unknown }
+    touchWindow.ontouchstart = null
+    const client = renderDialog(rule)
+    try {
+      const trigger = within(screen.getByText(key("actions.title"))).getByRole("button", { name: "fieldHelp.trigger" })
+      fireEvent.pointerDown(trigger, { pointerType: "touch" })
+      fireEvent.pointerUp(trigger, { pointerType: "touch" })
+      fireEvent.click(trigger)
+
+      expect(screen.getAllByText(key("actions.runOrderHelp")).length).toBeGreaterThan(0)
+    } finally {
+      delete touchWindow.ontouchstart
+      client.clear()
+    }
   })
 })
 

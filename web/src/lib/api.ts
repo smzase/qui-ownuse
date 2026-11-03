@@ -29,6 +29,10 @@ import type {
   CrossSeedAutomationSettingsPatch,
   CrossSeedAutomationStatus,
   CrossSeedBlocklistEntry,
+  CrossSeedRoute,
+  CrossSeedRouteRow,
+  CrossSeedRouteStatus,
+  CrossSeedRouteTestResult,
   CrossSeedInstanceResult,
   CrossSeedQueryDegradedReason,
   CrossSeedSearchDecisionTrace,
@@ -489,6 +493,8 @@ type RawCrossSeedInstanceResult = {
   status: string
   message?: string
   matched_torrent?: RawCrossSeedMatchedTorrent
+  cross_seed_instance_id?: number
+  cross_seed_instance_name?: string
 }
 
 function mapRawCrossSeedInstanceResult(instance: RawCrossSeedInstanceResult): CrossSeedInstanceResult {
@@ -498,6 +504,8 @@ function mapRawCrossSeedInstanceResult(instance: RawCrossSeedInstanceResult): Cr
     success: instance.success,
     status: instance.status,
     message: instance.message,
+    crossSeedInstanceId: instance.cross_seed_instance_id,
+    crossSeedInstanceName: instance.cross_seed_instance_name,
     matchedTorrent: instance.matched_torrent? {
       hash: instance.matched_torrent.hash ?? "",
       name: instance.matched_torrent.name ?? "",
@@ -1768,6 +1776,32 @@ class ApiClient {
   async patchCrossSeedSettings(payload: CrossSeedAutomationSettingsPatch) {
     return this.request<CrossSeedAutomationSettings & { warning?: string }>("/cross-seed/settings", {
       method: "PATCH",
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async listCrossSeedRoutes(): Promise<CrossSeedRoute[]> {
+    return this.request<CrossSeedRoute[]>("/cross-seed/routes")
+  }
+
+  async getCrossSeedRoute(sourceInstanceId: number): Promise<CrossSeedRouteStatus | null> {
+    return this.request<CrossSeedRouteStatus | null>(`/cross-seed/routes/${sourceInstanceId}`)
+  }
+
+  async saveCrossSeedRoute(sourceInstanceId: number, payload: { crossSeedInstanceId: number; rows: CrossSeedRouteRow[] }): Promise<CrossSeedRoute> {
+    return this.request<CrossSeedRoute>(`/cross-seed/routes/${sourceInstanceId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async clearCrossSeedRoute(sourceInstanceId: number): Promise<void> {
+    await this.request(`/cross-seed/routes/${sourceInstanceId}`, { method: "DELETE" })
+  }
+
+  async testCrossSeedRoute(sourceInstanceId: number, payload: { crossSeedInstanceId: number; rows: CrossSeedRouteRow[] }): Promise<CrossSeedRouteTestResult> {
+    return this.request<CrossSeedRouteTestResult>(`/cross-seed/routes/${sourceInstanceId}/test`, {
+      method: "POST",
       body: JSON.stringify(payload),
     })
   }

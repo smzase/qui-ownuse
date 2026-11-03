@@ -8,22 +8,32 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"syscall"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/autobrr/qui/internal/fsops"
+	"github.com/autobrr/qui/internal/models"
 )
 
 // ErrInUse indicates a deletion target contains files currently in use by torrents.
 var ErrInUse = errors.New("contains in-use torrent file")
+
+// errInUseThroughAlias is ErrInUse for a file a torrent reaches through another path.
+var errInUseThroughAlias = fmt.Errorf("%w through another path", ErrInUse)
 
 type deleteDisposition int
 
 const (
 	deleteDispositionDeleted deleteDisposition = iota
 	deleteDispositionSkippedInUse
+	deleteDispositionSkippedInUseThroughAlias
+	deleteDispositionSkippedFolderInUseThroughAlias
 	deleteDispositionSkippedMissing
 	deleteDispositionSkippedIgnored
 	deleteDispositionSkippedNotEmpty
 	deleteDispositionSkippedNotDirectory
+	deleteDispositionSkippedDirInUseThroughAlias
 )
 
 // withinScanRoot checks that target is an absolute path strictly below scanRoot.
@@ -81,6 +91,13 @@ func safeDeleteFile(ctx context.Context, scanRoot, target string, protected *pro
 	if !info.Mode.IsRegular() {
 		return 0, fmt.Errorf("refusing to delete non-regular file: %s", target)
 	}
+	held, err := protected.inUse.holds(info)
+	if err != nil {
+		return 0, err
+	}
+	if held {
+		return deleteDispositionSkippedInUseThroughAlias, nil
+	}
 
 	if err := backend.Remove(ctx, target, fsops.RemoveOptions{}); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -91,10 +108,12 @@ func safeDeleteFile(ctx context.Context, scanRoot, target string, protected *pro
 	return deleteDispositionDeleted, nil
 }
 
-// checkDirContainsInUseFile walks a directory and returns ErrInUse if a torrent owns any file in it.
+// checkDirContainsInUseFile returns ErrInUse if a torrent owns a file in the
+// directory, by path or by identity. It also fails when it cannot read an
+// entry, its identity or a symlink's target, since that could be a torrent's file.
 func checkDirContainsInUseFile(ctx context.Context, target string, protected *protectedPaths, backend fsops.Backend) error {
 	walkCtx, cancelWalk := context.WithCancel(ctx)
-	ch, err := backend.WalkDir(walkCtx, target, fsops.WalkOptions{EmitStatErrors: true})
+	ch, err := backend.WalkDir(walkCtx, target, fsops.WalkOptions{EmitStatErrors: true, WantFileID: protected.inUse != nil})
 	if err != nil {
 		cancelWalk()
 		if errors.Is(err, fs.ErrNotExist) {
@@ -130,11 +149,53 @@ func checkDirContainsInUseFile(ctx context.Context, target string, protected *pr
 		if entry.IsDir {
 			continue
 		}
-		if err := checkFileInUse(entry.Path, protected); err != nil {
+		if err := checkEntryInUse(ctx, &entry, protected, backend); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// checkEntryInUse returns ErrInUse if a torrent owns the walked non-directory
+// entry, by path or by identity.
+func checkEntryInUse(ctx context.Context, entry *fsops.WalkEntry, protected *protectedPaths, backend fsops.Backend) error {
+	if err := checkFileInUse(entry.Path, protected); err != nil {
+		return err
+	}
+	info := &entry.LstatInfo
+	// The removal takes a symlink with the folder, so a torrent that reaches
+	// a file through the link would lose its path to it. collectInUseIDs
+	// followed the link, so compare where it points.
+	if entry.IsSymlink && protected.inUse != nil {
+		var err error
+		if info, err = followSymlink(ctx, entry.Path, backend); err != nil || info == nil {
+			return err
+		}
+	}
+	held, err := protected.inUse.holds(info)
+	if err != nil {
+		return fmt.Errorf("cannot read the identity of the files in this folder: %w", err)
+	}
+	if held {
+		return fmt.Errorf("%w: %s", errInUseThroughAlias, entry.Path)
+	}
+	return nil
+}
+
+// followSymlink returns what the symlink at p points to. A link that leads
+// nowhere, dangling or in a loop, returns nil, since no torrent can use a file
+// through it.
+// Any other failure is returned, as for a regular entry whose identity cannot
+// be read, because the target could be a torrent's file.
+func followSymlink(ctx context.Context, p string, backend fsops.Backend) (*fsops.LstatInfo, error) {
+	info, err := backend.Stat(ctx, p)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("follow symlink %s: %w", p, err)
+	}
+	return info, nil
 }
 
 func checkFileInUse(path string, protected *protectedPaths) error {
@@ -142,6 +203,112 @@ func checkFileInUse(path string, protected *protectedPaths) error {
 		return fmt.Errorf("%w: %s", ErrInUse, path)
 	}
 	return nil
+}
+
+// inUseIDs holds the identity of every torrent file on disk at delete time, and
+// of the folders along the torrents' paths when a run lists folders. The file
+// map protects by path, so without these a torrent that reaches a listed file
+// or folder through a second path, such as a bind mount, a symlinked folder or
+// a hardlink, would lose it. One set holds both, which is safe only because
+// holds asks about regular files: a symlink to a reached folder inside a disc
+// unit must not keep the unit (#3612).
+type inUseIDs struct {
+	instance *models.Instance
+	keys     map[fsops.FileKey]struct{}
+	// fileDirs are the folders that hold a torrent file found on disk, as
+	// reachedDirs takes them.
+	fileDirs map[string]struct{}
+}
+
+// collectInUseIDs reads the identity of each torrent file or folder through
+// backend, following links, as qBittorrent does. A path that is not on disk, or that
+// runs into a symlink loop, protects nothing, since qBittorrent cannot read it
+// either. A path qui may not look up is skipped, as the scan skips a denied
+// subtree, unless failDenied is set. Any other failure is returned, a denied
+// identity read included, because a file the run cannot identify could be one
+// of the targets. Set failDenied for torrent folders: a denied one could be an
+// alias that qBittorrent can follow to a listed folder.
+func collectInUseIDs(ctx context.Context, backend fsops.Backend, instance *models.Instance, paths []string, failDenied bool) (*inUseIDs, error) {
+	// Cross-seeds share files, so the same path comes once per torrent.
+	seen := make(map[string]struct{}, len(paths))
+	unique := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if _, ok := seen[p]; !ok {
+			seen[p] = struct{}{}
+			unique = append(unique, p)
+		}
+	}
+	ids := &inUseIDs{instance: instance, keys: make(map[fsops.FileKey]struct{}, len(unique)), fileDirs: make(map[string]struct{})}
+	infos, errs := fsops.StatAll(ctx, backend, unique)
+	denied, firstDenied := 0, ""
+	for i := range unique {
+		if err := errs[i]; err != nil {
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ELOOP) {
+				continue
+			}
+			// A backend that wraps both errors lost the link, which says
+			// nothing about the file's permissions.
+			if !failDenied && errors.Is(err, fs.ErrPermission) && !errors.Is(err, fsops.ErrConnectionLost) {
+				if denied == 0 {
+					firstDenied = unique[i]
+				}
+				denied++
+				continue
+			}
+			return nil, err
+		}
+		info := infos[i]
+		if !info.Mode.IsRegular() && !info.IsDir {
+			continue
+		}
+		if info.Mode.IsRegular() {
+			ids.fileDirs[backend.Paths().Dir(unique[i])] = struct{}{}
+		}
+		key, err := fileKey(info, instance)
+		if err != nil {
+			return nil, err
+		}
+		ids.keys[key] = struct{}{}
+	}
+	if denied > 0 {
+		log.Warn().Int("count", denied).Str("first", firstDenied).Msg("orphanscan: skipping torrent paths qui may not look up")
+	}
+	return ids, nil
+}
+
+// holds reports whether a torrent file shares the identity of info, a regular
+// file read with Lstat. Like the scan (#3487), a target with more than one
+// link is kept when one of them is a torrent's.
+func (ids *inUseIDs) holds(info *fsops.LstatInfo) (bool, error) {
+	if !info.Mode.IsRegular() {
+		return false, nil
+	}
+	return ids.reaches(info)
+}
+
+// reaches reports whether a torrent's path leads to info, a folder read with
+// Lstat, under any spelling.
+func (ids *inUseIDs) reaches(info *fsops.LstatInfo) (bool, error) {
+	if ids == nil {
+		return false, nil
+	}
+	key, err := fileKey(info, ids.instance)
+	if err != nil {
+		return false, err
+	}
+	_, ok := ids.keys[key]
+	return ok, nil
+}
+
+func fileKey(info *fsops.LstatInfo, instance *models.Instance) (fsops.FileKey, error) {
+	if info.FileIDErr != nil {
+		return fsops.FileKey{}, fmt.Errorf("file identity %s: %w", info.Path, info.FileIDErr)
+	}
+	key, ok := fsops.FileKeyOf(info.FileID, instance)
+	if !ok {
+		return fsops.FileKey{}, fmt.Errorf("file identity %s: the filesystem reported none", info.Path)
+	}
+	return key, nil
 }
 
 // safeDeleteTarget removes a file OR directory with safety checks.
@@ -194,6 +361,9 @@ func safeDeleteDirectory(ctx context.Context, target string, protected *protecte
 		return deleteDispositionSkippedInUse, nil
 	}
 	if err := checkDirContainsInUseFile(ctx, target, protected, backend); err != nil {
+		if errors.Is(err, errInUseThroughAlias) {
+			return deleteDispositionSkippedFolderInUseThroughAlias, nil
+		}
 		if errors.Is(err, ErrInUse) {
 			return deleteDispositionSkippedInUse, nil
 		}
@@ -213,8 +383,9 @@ func safeDeleteDirectory(ctx context.Context, target string, protected *protecte
 // empty now, or is no longer a directory, is reported as skipped rather than
 // failed: a file inside it that the run kept is the usual reason, and nothing
 // went wrong. Remove still refuses a non-empty directory, so the check before it
-// only decides how the outcome is reported.
-func safeDeleteEmptyDir(ctx context.Context, scanRoot, target string, backend fsops.Backend) (deleteDisposition, error) {
+// only decides how the outcome is reported. A directory a torrent reaches under
+// another path stays, since a torrent that has not written yet leaves it empty.
+func safeDeleteEmptyDir(ctx context.Context, scanRoot, target string, protected *protectedPaths, backend fsops.Backend) (deleteDisposition, error) {
 	if err := withinScanRoot(backend.Paths(), scanRoot, target); err != nil {
 		return 0, err
 	}
@@ -228,6 +399,13 @@ func safeDeleteEmptyDir(ctx context.Context, scanRoot, target string, backend fs
 	}
 	if !info.IsDir {
 		return deleteDispositionSkippedNotDirectory, nil
+	}
+	reached, err := protected.inUse.reaches(info)
+	if err != nil {
+		return 0, err
+	}
+	if reached {
+		return deleteDispositionSkippedDirInUseThroughAlias, nil
 	}
 
 	entries, err := backend.ReadDir(ctx, target)

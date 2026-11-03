@@ -16,7 +16,7 @@ import (
 )
 
 func TestSubscriptionChangesKeepConnectionOwnership(t *testing.T) {
-	manager := NewStreamManager(nil, nil, nil)
+	manager := NewStreamManager(nil, nil, nil, nil)
 	t.Cleanup(func() { _ = manager.Shutdown(t.Context()) })
 	conn := manager.openConnection(false, 1)
 	conn.markReady()
@@ -45,7 +45,7 @@ func TestInitialAndAddedSubscriptionsKeepInstanceAccess(t *testing.T) {
 	instance, err := store.Create(t.Context(), models.ClientTypeTransmission, "fixture", "http://127.0.0.1:1", "", "", nil, nil, false, nil)
 	require.NoError(t, err)
 	require.NoError(t, store.SetOwner(t.Context(), instance.ID, 1))
-	manager := NewStreamManager(nil, nil, store)
+	manager := NewStreamManager(nil, nil, nil, store)
 	t.Cleanup(func() { _ = manager.Shutdown(t.Context()) })
 	ctx := context.WithValue(t.Context(), ctxkeys.UserID, 2)
 	ctx = context.WithValue(ctx, ctxkeys.UserRole, "user")

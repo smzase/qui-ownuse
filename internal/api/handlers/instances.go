@@ -20,6 +20,7 @@ import (
 	"github.com/autobrr/qui/internal/domain"
 	"github.com/autobrr/qui/internal/models"
 	internalqbittorrent "github.com/autobrr/qui/internal/qbittorrent"
+	"github.com/autobrr/qui/internal/services/crossseedroute"
 	"github.com/autobrr/qui/internal/services/orphanscan"
 	"github.com/autobrr/qui/internal/services/reannounce"
 	"github.com/autobrr/qui/internal/sshpool"
@@ -39,6 +40,9 @@ type InstancesHandler struct {
 	// orphanScan keeps orphan scan runs bound to the SSH server they walked.
 	// Nil in tests that do not need it.
 	orphanScan orphanScanGuard
+	// routes refuses instance changes that break a cross-seed route. Nil in
+	// tests that do not need it.
+	routes *crossseedroute.Service
 }
 
 type orphanScanGuard interface {
@@ -51,6 +55,30 @@ func (h *InstancesHandler) SetOrphanScan(s *orphanscan.Service) {
 	if s != nil {
 		h.orphanScan = s
 	}
+}
+
+// SetCrossSeedRoutes wires the cross-seed routes in.
+func (h *InstancesHandler) SetCrossSeedRoutes(routes *crossseedroute.Service) {
+	h.routes = routes
+}
+
+// refuseRouteBreak answers the request and returns true when storing after in
+// place of before breaks a cross-seed route.
+func (h *InstancesHandler) refuseRouteBreak(w http.ResponseWriter, r *http.Request, before, after *models.Instance) bool {
+	if h.routes == nil {
+		return false
+	}
+	err := h.routes.CheckInstanceChange(r.Context(), before, after)
+	if err == nil {
+		return false
+	}
+	if ruleErr, ok := errors.AsType[*crossseedroute.RuleError](err); ok {
+		RespondError(w, http.StatusBadRequest, ruleErr.Message)
+		return true
+	}
+	log.Error().Err(err).Int("instanceID", after.ID).Msg("Failed to check cross-seed routes")
+	RespondError(w, http.StatusInternalServerError, "Failed to check cross-seed routes")
+	return true
 }
 
 // sshChangeDuringDeletionMessage is the 409 body for an SSH change refused
@@ -106,13 +134,11 @@ func (h *InstancesHandler) GetInstanceCapabilities(w http.ResponseWriter, r *htt
 		}
 	}
 
-	if client.GetWebAPIVersion() == "" {
-		if err := client.RefreshCapabilities(ctx); err != nil {
-			log.Error().
-				Err(err).
-				Int("instanceID", instanceID).
-				Msg("Unable to refresh qBittorrent capabilities during request")
-		}
+	if err := client.EnsureCapabilities(ctx); err != nil {
+		log.Error().
+			Err(err).
+			Int("instanceID", instanceID).
+			Msg("Unable to refresh qBittorrent capabilities during request")
 	}
 
 	capabilities := NewInstanceCapabilitiesResponse(client)
@@ -313,6 +339,8 @@ func (h *InstancesHandler) buildInstanceResponsesParallel(ctx context.Context, i
 				SSHPort:                  instances[i].SSHPort,
 				SSHUsername:              instances[i].SSHUsername,
 				SSHHostKeyPinned:         instances[i].SSHHostKeyEncrypted != "",
+				SSHTier:                  sshTierField(instances[i]),
+				SSHHardlink:              instances[i].SSHHardlink,
 				FilesystemMode:           string(models.FilesystemAccessMode(instances[i])),
 				Capabilities:             models.FilesystemCapabilitiesOf(instances[i]),
 				ReannounceSettings:       payloadFromModel(models.DefaultInstanceReannounceSettings(instances[i].ID)),
@@ -373,6 +401,8 @@ func (h *InstancesHandler) buildInstanceResponse(ctx context.Context, instance *
 		SSHPort:                  instance.SSHPort,
 		SSHUsername:              instance.SSHUsername,
 		SSHHostKeyPinned:         instance.SSHHostKeyEncrypted != "",
+		SSHTier:                  sshTierField(instance),
+		SSHHardlink:              instance.SSHHardlink,
 		FilesystemMode:           string(models.FilesystemAccessMode(instance)),
 		Capabilities:             models.FilesystemCapabilitiesOf(instance),
 
@@ -424,6 +454,8 @@ func (h *InstancesHandler) buildQuickInstanceResponse(ctx context.Context, insta
 		SSHPort:                  instance.SSHPort,
 		SSHUsername:              instance.SSHUsername,
 		SSHHostKeyPinned:         instance.SSHHostKeyEncrypted != "",
+		SSHTier:                  sshTierField(instance),
+		SSHHardlink:              instance.SSHHardlink,
 		FilesystemMode:           string(models.FilesystemAccessMode(instance)),
 		Capabilities:             models.FilesystemCapabilitiesOf(instance),
 	}
@@ -557,9 +589,20 @@ type InstanceResponse struct {
 	SSHPort                  int                               `json:"sshPort,omitempty"`
 	SSHUsername              string                            `json:"sshUsername,omitempty"`
 	SSHHostKeyPinned         bool                              `json:"sshHostKeyPinned"`
+	SSHTier                  string                            `json:"sshTier,omitempty"`
+	SSHHardlink              *bool                             `json:"sshHardlink,omitempty"`
 	FilesystemMode           string                            `json:"filesystemMode"`
 	Capabilities             models.FilesystemCapabilities     `json:"capabilities"`
 	ReannounceSettings       InstanceReannounceSettingsPayload `json:"reannounceSettings"`
+}
+
+// sshTierField is the probed tier on the wire: only an instance with SSH
+// credentials has one.
+func sshTierField(instance *models.Instance) string {
+	if instance.SSHKeyEncrypted == "" {
+		return ""
+	}
+	return string(instance.SSHTier)
 }
 
 // InstanceReannounceSettingsPayload carries tracker monitoring config.
@@ -830,51 +873,55 @@ func (h *InstancesHandler) UpdateInstance(w http.ResponseWriter, r *http.Request
 		req.APIKey = nil
 	}
 
-	// Validate hardlink/reflink settings
+	// Validate hardlink/reflink settings on the row as it is after the change
 	effective := *existingInstance
 	if req.HasLocalFilesystemAccess != nil {
 		effective.HasLocalFilesystemAccess = *req.HasLocalFilesystemAccess
+	}
+	if req.UseHardlinks != nil {
+		effective.UseHardlinks = *req.UseHardlinks
+	}
+	if req.UseReflinks != nil {
+		effective.UseReflinks = *req.UseReflinks
+	}
+	if req.HardlinkBaseDir != nil {
+		effective.HardlinkBaseDir = *req.HardlinkBaseDir
 	}
 	canWrite := models.FilesystemCapabilitiesOf(&effective).Write
 	// No backend reflinks over sftp, so reflink mode stays a local-only choice
 	// even though a remote instance has Write (#2942).
 	canReflink := canWrite && models.FilesystemAccessMode(&effective) == models.FilesystemModeLocal
-	effectiveUseHardlinks := existingInstance.UseHardlinks
-	if req.UseHardlinks != nil {
-		effectiveUseHardlinks = *req.UseHardlinks
-	}
-	effectiveUseReflinks := existingInstance.UseReflinks
-	if req.UseReflinks != nil {
-		effectiveUseReflinks = *req.UseReflinks
-	}
-	effectiveHardlinkBaseDir := existingInstance.HardlinkBaseDir
-	if req.HardlinkBaseDir != nil {
-		effectiveHardlinkBaseDir = *req.HardlinkBaseDir
-	}
 
 	// Mutual exclusivity: cannot enable both hardlink and reflink modes
-	if effectiveUseHardlinks && effectiveUseReflinks {
+	if effective.UseHardlinks && effective.UseReflinks {
 		RespondError(w, http.StatusBadRequest, "Cannot enable both hardlink and reflink modes - they are mutually exclusive")
 		return
 	}
 
-	if effectiveUseHardlinks {
+	// Before the link mode checks, so that a Source instance hears about its
+	// route, and before the store update, which drops the qBittorrent client
+	// and resets its failure tracking.
+	if h.refuseRouteBreak(w, r, existingInstance, &effective) {
+		return
+	}
+
+	if effective.UseHardlinks {
 		if !canWrite {
 			RespondError(w, http.StatusBadRequest, "Cannot enable hardlink mode without local filesystem access")
 			return
 		}
-		if effectiveHardlinkBaseDir == "" {
+		if effective.HardlinkBaseDir == "" {
 			RespondError(w, http.StatusBadRequest, "Cannot enable hardlink mode without a base directory")
 			return
 		}
 	}
 
-	if effectiveUseReflinks {
+	if effective.UseReflinks {
 		if !canReflink {
 			RespondError(w, http.StatusBadRequest, "Cannot enable reflink mode without local filesystem access")
 			return
 		}
-		if effectiveHardlinkBaseDir == "" {
+		if effective.HardlinkBaseDir == "" {
 			RespondError(w, http.StatusBadRequest, "Cannot enable reflink mode without a base directory")
 			return
 		}
@@ -910,6 +957,13 @@ func (h *InstancesHandler) UpdateInstance(w http.ResponseWriter, r *http.Request
 	// leaves the session alone, since Invalidate cuts reads in flight.
 	if models.FilesystemAccessMode(existingInstance) != models.FilesystemAccessMode(instance) {
 		h.sshPool.Invalidate(instanceID)
+	}
+	if h.routes != nil {
+		// The instance is saved, so a failed drop leaves an unused row that
+		// the next update drops.
+		if err := h.routes.DropRemovedBaseDirs(r.Context(), instanceID); err != nil {
+			log.Error().Err(err).Int("instanceID", instanceID).Msg("Failed to drop the cross-seed route rows of removed base folders")
+		}
 	}
 
 	var settings *models.InstanceReannounceSettings

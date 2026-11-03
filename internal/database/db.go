@@ -56,6 +56,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sort"
@@ -137,6 +138,9 @@ var sharedMigrationFilenameRenames = []migrationFilenameRename{
 }
 
 var sqliteMigrationFilenameRenames = []migrationFilenameRename{
+	{from: "108_add_cross_seed_routes.sql", to: "114_add_cross_seed_routes.sql"},
+	{from: "109_add_season_pack_run_added_instance.sql", to: "115_add_season_pack_run_added_instance.sql"},
+	{from: "110_add_instance_ssh_hardlink.sql", to: "116_add_instance_ssh_hardlink.sql"},
 	{from: "107_add_orphan_scan_run_identity.sql", to: "113_add_orphan_scan_run_identity.sql"},
 	{from: "106_add_instance_ssh_tier.sql", to: "111_add_instance_ssh_tier.sql"},
 	{from: "094_add_arr_id_cache_episode_map.sql", to: "098_add_arr_id_cache_episode_map.sql"},
@@ -230,6 +234,9 @@ var sqliteMigrationFilenameRenames = []migrationFilenameRename{
 }
 
 var postgresMigrationFilenameRenames = []migrationFilenameRename{
+	{from: "109_add_cross_seed_routes.sql", to: "115_add_cross_seed_routes.sql"},
+	{from: "110_add_season_pack_run_added_instance.sql", to: "116_add_season_pack_run_added_instance.sql"},
+	{from: "111_add_instance_ssh_hardlink.sql", to: "117_add_instance_ssh_hardlink.sql"},
 	{from: "108_add_orphan_scan_run_identity.sql", to: "114_add_orphan_scan_run_identity.sql"},
 	{from: "107_add_instance_ssh_tier.sql", to: "112_add_instance_ssh_tier.sql"},
 	{from: "095_add_arr_id_cache_episode_map.sql", to: "099_add_arr_id_cache_episode_map.sql"},
@@ -644,6 +651,15 @@ func secureDatabaseFiles(databasePath string) error {
 	return nil
 }
 
+// sqliteReaderPoolSize caps the SQLite read pool. Without a cap, a burst of
+// reads opens one connection each, and each new connection must load the schema
+// within connectionSetupTimeout. GOMAXPROCS follows a container CPU limit. The
+// floor of 8 keeps small machines from queueing reads; the ceiling of 16 matches
+// the qBittorrent file fetch limit and the largest cap that was load tested.
+func sqliteReaderPoolSize() int {
+	return min(max(runtime.GOMAXPROCS(0), 8), 16)
+}
+
 func newStmtCache() *ttlcache.Cache[string, *sql.Stmt] {
 	return ttlcache.New[string, *sql.Stmt](
 		ttlcache.SetDefaultTTL(5*time.Minute),
@@ -708,8 +724,9 @@ func New(databasePath string) (*DB, error) {
 	}
 
 	// Configure reader pool for concurrent reads
-	readerPool.SetMaxOpenConns(0) // unlimited connections
-	readerPool.SetMaxIdleConns(5) // keep more idle connections for read concurrency
+	readerPoolSize := sqliteReaderPoolSize()
+	readerPool.SetMaxOpenConns(readerPoolSize)
+	readerPool.SetMaxIdleConns(readerPoolSize)
 	readerPool.SetConnMaxLifetime(0)
 	log.Debug().Msg("Reader pool opened in read-only mode")
 
@@ -823,7 +840,9 @@ func (db *DB) getStmt(ctx context.Context, query string, tx *Tx) (*sql.Stmt, err
 			return tx.tx.StmtContext(ctx, s), nil
 		}
 		return s, nil
-	} else if tx != nil && tx.isWriteTx {
+	} else if tx != nil {
+		// The transaction holds a connection. Preparing on the pool would need a
+		// second one, so run the query on the transaction and cache it after commit.
 		return nil, errors.New("statement not cached")
 	}
 
@@ -1301,7 +1320,7 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (dbinterface.TxQ
 	isReadOnly := opts != nil && opts.ReadOnly
 
 	if isReadOnly {
-		// Read-only transactions use the reader pool (no lock needed, unlimited concurrency)
+		// Read-only transactions use the reader pool (no lock needed; waits for a free connection when the pool is full)
 		tx, err := db.readerPool.BeginTx(ctx, opts)
 		if err != nil {
 			return nil, err

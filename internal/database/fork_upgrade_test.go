@@ -18,7 +18,7 @@ import (
 
 func TestUpstreamMergePreservesForkSQLite(t *testing.T) {
 	t.Parallel()
-	for _, cutoff := range []string{"097_scope_client_settings_to_users.sql", "110_restore_fork_instance_view.sql"} {
+	for _, cutoff := range []string{"097_scope_client_settings_to_users.sql", "110_restore_fork_instance_view.sql", "112_restore_fork_instance_ssh_tier_view.sql"} {
 		t.Run(cutoff, func(t *testing.T) {
 			conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "fork.db"))
 			require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestUpstreamMergePreservesForkSQLite(t *testing.T) {
 
 func TestUpstreamMergePreservesForkPostgresIntegration(t *testing.T) {
 	t.Parallel()
-	for _, cutoff := range []string{"098_scope_client_settings_to_users.sql", "111_restore_fork_instance_view.sql"} {
+	for _, cutoff := range []string{"098_scope_client_settings_to_users.sql", "111_restore_fork_instance_view.sql", "113_restore_fork_instance_ssh_tier_view.sql"} {
 		t.Run(cutoff, func(t *testing.T) {
 			ctx, dsn := openPostgresTestSchema(t)
 			conn, err := sql.Open("pgx", dsn)
@@ -87,7 +87,7 @@ func checkForkUpgrade(ctx context.Context, t *testing.T, db *DB, fsys fs.ReadDir
 	exec("INSERT INTO user_permissions (user_id, permission) VALUES (2, 'manage_updates')")
 	exec("INSERT INTO client_settings (user_id, key, value) VALUES (2, 'sidebar', '{\"hidden\":[\"rss\"]}'), (3, 'sidebar', '{\"hidden\":[]}'), (2, 'layout', '{\"sync\":true}')")
 	exec("INSERT INTO api_keys (key_hash, name_id, user_id) SELECT 'fixture-key-hash', id, 2 FROM string_pool WHERE value = 'fork-fixture'")
-	previousMerge := strings.Contains(cutoff, "restore_fork_instance_view")
+	previousMerge := strings.Contains(cutoff, "restore_fork_instance")
 	if previousMerge {
 		exec("INSERT INTO theme_settings (slot, theme_id, mode, variation) VALUES ('default', 'custom-fixture', 'dark', '') ON CONFLICT (slot) DO UPDATE SET theme_id = excluded.theme_id, mode = excluded.mode")
 		exec("UPDATE instances SET ssh_host = 'fixture.invalid', ssh_port = 2222, ssh_username = 'fixture', ssh_key_encrypted = 'fixture-key', ssh_host_key_encrypted = 'fixture-pin' WHERE id = 1")
@@ -138,7 +138,9 @@ func checkForkUpgrade(ctx context.Context, t *testing.T, db *DB, fsys fs.ReadDir
 		}
 		var clientType, themeID, mode, sshHost, sshTier string
 		var ownerID, sshPort int
-		require.NoError(t, conn.QueryRowContext(ctx, "SELECT client_type, owner_id, ssh_host, ssh_port, ssh_tier FROM instances_view WHERE id = 1").Scan(&clientType, &ownerID, &sshHost, &sshPort, &sshTier))
+		var sshHardlink sql.NullBool
+		require.NoError(t, conn.QueryRowContext(ctx, "SELECT client_type, owner_id, ssh_host, ssh_port, ssh_tier, ssh_hardlink FROM instances_view WHERE id = 1").Scan(&clientType, &ownerID, &sshHost, &sshPort, &sshTier, &sshHardlink))
+		require.False(t, sshHardlink.Valid)
 		require.Equal(t, "transmission", clientType)
 		require.Equal(t, 2, ownerID)
 		if previousMerge {

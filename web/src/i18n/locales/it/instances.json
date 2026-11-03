@@ -514,7 +514,6 @@
       "dryRun": "Dry run",
       "removed": "Rimosso",
       "executed": "Eseguito",
-      "copyHash": "Copia hash",
       "original": "Originale: {{domain}}",
       "programLabel": "Programma: {{name}}",
       "ruleLabel": "Regola: {{name}}",
@@ -675,8 +674,7 @@
         "exportedTorrents": "{{count}} torrent esportati in CSV",
         "exportFailed": "Esportazione dell'anteprima non riuscita",
         "deletedActivityEntries": "{{count}} voci di attività eliminate",
-        "deleteActivityFailed": "Eliminazione dell'attività non riuscita",
-        "hashCopied": "Hash copiato"
+        "deleteActivityFailed": "Eliminazione dell'attività non riuscita"
       },
       "exported": "Esportato"
     },
@@ -776,7 +774,6 @@
       "deletedSeparator": ", ",
       "partialFailure": "Errore parziale - controlla le scansioni recenti",
       "partialFailureExpand": "Errore parziale - espandi per i dettagli",
-      "copiedToClipboard": "Copiato negli appunti",
       "noScansYet": "Nessuna scansione eseguita. Fai clic su \"Scansiona ora\" per trovare gli orfani.",
       "statusClean": "Pulito",
       "statusPartial": "Scansione parziale",
@@ -796,7 +793,9 @@
         "scanStartFailed": "Avvio della scansione non riuscito",
         "scanCanceled": "Scansione annullata",
         "cancelFailed": "Annullamento non riuscito"
-      }
+      },
+      "errorMessage": "Messaggio di errore",
+      "scanPaths": "Percorsi di scansione"
     },
     "orphanScanPreview": {
       "title": "Anteprima orfani",
@@ -945,8 +944,6 @@
       "ratio": "Rapporto",
       "added": "Aggiunto",
       "original": "Originale: {{domain}}",
-      "hashCopied": "Hash copiato",
-      "copyHash": "Copia hash",
       "loading": "Caricamento...",
       "notAvailable": "Dettagli dell'esecuzione non disponibili (solo in memoria).",
       "failedToLoad": "Impossibile caricare i dettagli dell'esecuzione.",
@@ -1010,8 +1007,6 @@
       "tryDifferentSearch": "Prova un altro termine di ricerca o svuota il filtro.",
       "eventsWillAppear": "Gli eventi appariranno qui quando vengono rilevati torrent in stallo.",
       "enableMonitoring": "Abilita il monitoraggio per iniziare a tracciare i torrent in stallo.",
-      "hashCopied": "Hash copiato",
-      "copyHash": "Copia hash",
       "outcomes": {
         "succeeded": "Completato",
         "failed": "Fallito",
@@ -1180,6 +1175,7 @@
         "title": "Azione",
         "addAction": "Aggiungi un'azione",
         "selectAction": "Seleziona un'azione...",
+        "runOrderHelp": "Le azioni vengono eseguite nell'ordine mostrato. Ogni azione vede il torrent com'era all'inizio dell'esecuzione, quindi un programma esterno eseguito dopo uno spostamento riceve ancora il vecchio percorso di salvataggio.",
         "speedLimits": "Limiti di velocità",
         "shareLimits": "Limiti di condivisione",
         "pause": "Metti in pausa",

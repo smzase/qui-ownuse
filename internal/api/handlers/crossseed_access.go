@@ -29,7 +29,17 @@ func (h *CrossSeedHandler) scopeCrossSeedInstanceIDs(r *http.Request, requested 
 		}
 		ids := make([]int, 0, len(instances))
 		for _, instance := range instances {
+			allowed, err := h.canAccessCrossSeedTarget(r, instance.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				continue
+			}
 			ids = append(ids, instance.ID)
+		}
+		if len(ids) == 0 {
+			return nil, errCrossSeedInstanceForbidden
 		}
 		return ids, nil
 	}
@@ -51,9 +61,31 @@ func (h *CrossSeedHandler) scopeCrossSeedInstanceIDs(r *http.Request, requested 
 		if !allowed {
 			return nil, errCrossSeedInstanceForbidden
 		}
+		allowed, err = h.canAccessCrossSeedTarget(r, id)
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			return nil, errCrossSeedInstanceForbidden
+		}
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// A routed add writes to the target even when the request names only its source.
+func (h *CrossSeedHandler) canAccessCrossSeedTarget(r *http.Request, sourceID int) (bool, error) {
+	if h.routes == nil {
+		return true, nil
+	}
+	route, err := h.routes.CrossSeedRouteStore.Get(r.Context(), sourceID)
+	if err != nil {
+		return false, err
+	}
+	if route == nil {
+		return true, nil
+	}
+	return h.instanceStore.CanAccess(r.Context(), route.CrossSeedInstanceID, currentUserID(r), isAdmin(r))
 }
 
 func respondCrossSeedInstanceScopeError(w http.ResponseWriter, err error) {

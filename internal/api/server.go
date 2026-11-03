@@ -33,6 +33,7 @@ import (
 	"github.com/autobrr/qui/internal/services/arr"
 	"github.com/autobrr/qui/internal/services/automations"
 	"github.com/autobrr/qui/internal/services/crossseed"
+	"github.com/autobrr/qui/internal/services/crossseedroute"
 	"github.com/autobrr/qui/internal/services/dirscan"
 	"github.com/autobrr/qui/internal/services/discscan"
 	"github.com/autobrr/qui/internal/services/externalprograms"
@@ -41,6 +42,7 @@ import (
 	"github.com/autobrr/qui/internal/services/license"
 	"github.com/autobrr/qui/internal/services/notifications"
 	"github.com/autobrr/qui/internal/services/orphanscan"
+	"github.com/autobrr/qui/internal/services/peerclienticons"
 	"github.com/autobrr/qui/internal/services/reannounce"
 	"github.com/autobrr/qui/internal/services/trackericons"
 	"github.com/autobrr/qui/internal/sshpool"
@@ -74,6 +76,7 @@ type Server struct {
 	restarter                        *update.Restarter
 	selfUpdater                      *update.Updater
 	trackerIconService               *trackericons.Service
+	peerClientIconService            *peerclienticons.Service
 	backupService                    *backups.Service
 	streamManager                    *sse.StreamManager
 	filesManager                     *filesmanager.Service
@@ -93,6 +96,7 @@ type Server struct {
 	notificationService              *notifications.Service
 	instanceCrossSeedCompletionStore *models.InstanceCrossSeedCompletionStore
 	seasonPackRunStore               *models.SeasonPackRunStore
+	crossSeedRoutes                  *crossseedroute.Service
 	orphanScanStore                  *models.OrphanScanStore
 	orphanScanService                *orphanscan.Service
 	discScanStore                    *models.DiscScanStore
@@ -128,6 +132,7 @@ type Dependencies struct {
 	Restarter                        *update.Restarter
 	SelfUpdater                      *update.Updater
 	TrackerIconService               *trackericons.Service
+	PeerClientIconService            *peerclienticons.Service
 	BackupService                    *backups.Service
 	FilesManager                     *filesmanager.Service
 	CrossSeedService                 *crossseed.Service
@@ -146,6 +151,7 @@ type Dependencies struct {
 	NotificationService              *notifications.Service
 	InstanceCrossSeedCompletionStore *models.InstanceCrossSeedCompletionStore
 	SeasonPackRunStore               *models.SeasonPackRunStore
+	CrossSeedRoutes                  *crossseedroute.Service
 	OrphanScanStore                  *models.OrphanScanStore
 	OrphanScanService                *orphanscan.Service
 	DiscScanStore                    *models.DiscScanStore
@@ -159,7 +165,7 @@ type Dependencies struct {
 }
 
 func NewServer(deps *Dependencies) *Server {
-	streamManager := sse.NewStreamManager(deps.ClientPool, deps.SyncManager, deps.InstanceStore)
+	streamManager := sse.NewStreamManager(deps.ClientPool, deps.SyncManager, deps.SyncManager, deps.InstanceStore)
 	if deps.ClientPool != nil {
 		deps.ClientPool.SetSyncEventSink(streamManager)
 	}
@@ -203,6 +209,7 @@ func NewServer(deps *Dependencies) *Server {
 		restarter:                        deps.Restarter,
 		selfUpdater:                      deps.SelfUpdater,
 		trackerIconService:               deps.TrackerIconService,
+		peerClientIconService:            deps.PeerClientIconService,
 		backupService:                    deps.BackupService,
 		streamManager:                    streamManager,
 		filesManager:                     deps.FilesManager,
@@ -223,6 +230,7 @@ func NewServer(deps *Dependencies) *Server {
 		notificationService:              deps.NotificationService,
 		instanceCrossSeedCompletionStore: deps.InstanceCrossSeedCompletionStore,
 		seasonPackRunStore:               deps.SeasonPackRunStore,
+		crossSeedRoutes:                  deps.CrossSeedRoutes,
 		orphanScanStore:                  deps.OrphanScanStore,
 		orphanScanService:                deps.OrphanScanService,
 		discScanStore:                    deps.DiscScanStore,
@@ -374,6 +382,7 @@ func (s *Server) Handler() (*chi.Mux, error) {
 	instancesHandler := handlers.NewInstancesHandler(s.instanceStore, s.instanceReannounce, s.reannounceCache, s.clientPool, s.syncManager, s.reannounceService, sshpool.NewDialer(s.instanceStore), s.sshPool)
 	managedUsersHandler := handlers.NewManagedUsersHandler(s.authService)
 	instancesHandler.SetOrphanScan(s.orphanScanService)
+	instancesHandler.SetCrossSeedRoutes(s.crossSeedRoutes)
 	torrentsHandler := handlers.NewTorrentsHandler(s.syncManager, s.jackettService, s.instanceStore, s.crossSeedService)
 	preferencesHandler := handlers.NewPreferencesHandler(s.syncManager)
 	clientAPIKeysHandler := handlers.NewClientAPIKeysHandler(s.clientAPIKeyStore, s.instanceStore, s.config.Config.BaseURL)
@@ -386,6 +395,7 @@ func (s *Server) Handler() (*chi.Mux, error) {
 	qbittorrentInfoHandler := handlers.NewQBittorrentInfoHandler(s.clientPool)
 	backupsHandler := handlers.NewBackupsHandler(s.backupService)
 	trackerIconHandler := handlers.NewTrackerIconHandler(s.trackerIconService)
+	peerClientIconHandler := handlers.NewPeerClientIconHandler(s.peerClientIconService)
 	proxyHandler := proxy.NewHandler(s.clientPool, s.clientAPIKeyStore, s.instanceStore, s.syncManager, s.reannounceCache, s.reannounceService, s.config.Config.BaseURL)
 	// License handler disabled — all themes are free in this fork.
 	themesHandler := handlers.NewThemesHandler(s.config, s.licenseService, s.themeSettingsStore, func(ctx context.Context) bool {
@@ -397,6 +407,8 @@ func (s *Server) Handler() (*chi.Mux, error) {
 		s.instanceCrossSeedCompletionStore,
 		s.instanceStore,
 		s.seasonPackRunStore,
+		s.crossSeedRoutes,
+		s.syncManager,
 	)
 	automationsHandler := handlers.NewAutomationHandler(s.automationStore, s.automationActivityStore, s.instanceStore, s.externalProgramStore, s.automationService, s.authService)
 	orphanScanHandler := handlers.NewOrphanScanHandler(s.orphanScanStore, s.instanceStore, s.orphanScanService)
@@ -495,6 +507,7 @@ func (s *Server) Handler() (*chi.Mux, error) {
 			r.Use(middleware.PopulateUserContext(s.authService, s.config.Config))
 
 			r.Get("/tracker-icons", trackerIconHandler.GetTrackerIcons)
+			r.Get("/peer-client-icons/{name}", peerClientIconHandler.GetPeerClientIcon)
 			r.Post("/stream/subscriptions", s.streamManager.ChangeSubscriptions)
 
 			// Auth routes

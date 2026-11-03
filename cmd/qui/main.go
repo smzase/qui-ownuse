@@ -41,6 +41,7 @@ import (
 	"github.com/autobrr/qui/internal/services/arr"
 	"github.com/autobrr/qui/internal/services/automations"
 	"github.com/autobrr/qui/internal/services/crossseed"
+	"github.com/autobrr/qui/internal/services/crossseedroute"
 	"github.com/autobrr/qui/internal/services/dirscan"
 	"github.com/autobrr/qui/internal/services/discscan"
 	"github.com/autobrr/qui/internal/services/externalprograms"
@@ -49,6 +50,7 @@ import (
 	"github.com/autobrr/qui/internal/services/license"
 	"github.com/autobrr/qui/internal/services/notifications"
 	"github.com/autobrr/qui/internal/services/orphanscan"
+	"github.com/autobrr/qui/internal/services/peerclienticons"
 	"github.com/autobrr/qui/internal/services/reannounce"
 	"github.com/autobrr/qui/internal/services/trackericons"
 	"github.com/autobrr/qui/internal/sqlite3store"
@@ -576,6 +578,12 @@ func (app *Application) runServer() {
 	// Make tracker icon service globally accessible for background fetching
 	trackericons.SetGlobal(trackerIconService)
 
+	peerClientIconService, err := peerclienticons.NewService(cfg.GetDataDir(), buildinfo.UserAgent, peerclienticons.Icons)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to prepare peer client icon cache")
+	}
+	peerClientIconService.SetFetchEnabled(cfg.Config.TrackerIconsFetchEnabled)
+
 	// Ensure the custom themes directory exists so users have a place to drop
 	// sideloaded *.css files. Non-fatal: the themes handler also ensures lazily.
 	if themesDir, err := cfg.EnsureCustomThemesDir(); err != nil {
@@ -583,6 +591,7 @@ func (app *Application) runServer() {
 	}
 	cfg.RegisterReloadListener(func(conf *domain.Config) {
 		trackericons.SetFetchEnabled(conf.TrackerIconsFetchEnabled)
+		peerClientIconService.SetFetchEnabled(conf.TrackerIconsFetchEnabled)
 		log.Debug().Bool("enabled", conf.TrackerIconsFetchEnabled).Msg("Tracker icon fetch setting updated")
 	})
 
@@ -783,13 +792,18 @@ func (app *Application) runServer() {
 		return remotebackend.New(sshPool, inst)
 	})
 	crossSeedService.SetBackendPool(backendPool)
+	crossSeedRoutes := crossseedroute.NewService(models.NewCrossSeedRouteStore(db), instanceStore, clientPool, backendPool)
+	crossSeedService.SetCrossSeedRoutes(crossSeedRoutes)
+	crossSeedService.Adder().SetCrossSeedRoutes(crossSeedRoutes)
 
 	automationService := automations.NewService(automations.DefaultConfig(), instanceStore, automationStore, automationActivityStore, trackerCustomizationStore, syncManager, notificationService, externalProgramService, crossSeedService, backendPool)
 	automationService.SetActivityPublisher(activityHub)
+	automationService.SetCrossSeedRoutes(crossSeedRoutes)
 
 	orphanScanStore := models.NewOrphanScanStore(db)
 	orphanScanService := orphanscan.NewService(orphanscan.DefaultConfig(), instanceStore, orphanScanStore, syncManager, notificationService, backendPool)
 	orphanScanService.SetActivityPublisher(activityHub)
+	orphanScanService.SetCrossSeedRoutes(crossSeedRoutes)
 
 	folderCleanup := qbittorrent.NewFolderCleanup(backendPool, syncManager, orphanScanService)
 	syncManager.SetFolderCleanup(folderCleanup)
@@ -802,6 +816,7 @@ func (app *Application) runServer() {
 	dirScanStore := models.NewDirScanStore(db)
 	dirScanService := dirscan.NewService(dirscan.DefaultConfig(), dirScanStore, crossSeedStore, instanceStore, syncManager, jackettService, arrService, trackerCustomizationStore, notificationService, backendPool, crossSeedService.Adder())
 	dirScanService.SetActivityPublisher(activityHub)
+	dirScanService.SetCrossSeedRoutes(crossSeedRoutes)
 
 	syncManager.SetTorrentCompletionHandler(func(ctx context.Context, instanceID int, torrent qbt.Torrent) {
 		notificationService.Notify(ctx, buildTorrentCompletedEvent(syncManager, instanceID, torrent))
@@ -931,6 +946,7 @@ func (app *Application) runServer() {
 		Restarter:                        restarter,
 		SelfUpdater:                      selfUpdater,
 		TrackerIconService:               trackerIconService,
+		PeerClientIconService:            peerClientIconService,
 		BackupService:                    backupService,
 		FilesManager:                     filesManagerService,
 		CrossSeedService:                 crossSeedService,
@@ -949,6 +965,7 @@ func (app *Application) runServer() {
 		NotificationService:              notificationService,
 		InstanceCrossSeedCompletionStore: instanceCrossSeedCompletionStore,
 		SeasonPackRunStore:               seasonPackRunStore,
+		CrossSeedRoutes:                  crossSeedRoutes,
 		OrphanScanStore:                  orphanScanStore,
 		OrphanScanService:                orphanScanService,
 		DiscScanStore:                    discScanStore,
@@ -990,7 +1007,7 @@ func (app *Application) runServer() {
 	}
 
 	if cfg.Config.MetricsEnabled {
-		metricsManager := metrics.NewMetricsManager(syncManager, clientPool, trackerCustomizationStore)
+		metricsManager := metrics.NewMetricsManager(syncManager, clientPool, trackerCustomizationStore, crossSeedService.MetricsCollectors()...)
 
 		// Start metrics server on separate port
 		go func() {
