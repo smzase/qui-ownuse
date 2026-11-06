@@ -9,13 +9,13 @@ import { QueryBuilder, type GroupOption } from "@/components/query-builder"
 import {
   CONDITION_FIELDS,
   CATEGORY_UNCATEGORIZED_VALUE,
-  FIELD_REQUIREMENTS,
   SCORE_FIELDS,
   SORT_FIELDS,
   STATE_VALUE_REQUIREMENTS,
   getCapabilityReason,
+  getDisabledFields,
+  getRuleSkipReason,
   type Capabilities,
-  type DisabledField,
   type DisabledStateValue
 } from "@/components/query-builder/constants"
 import {
@@ -151,6 +151,7 @@ const DRY_RUN_ACTION_LABEL_KEYS: Record<AutomationActivity["action"], string> = 
   external_program: "preferences.workflowDialog.dryRun.actions.externalProgram",
   exported_to_instance: "preferences.workflowDialog.dryRun.actions.exportedToInstance",
   dry_run_no_match: "preferences.workflowDialog.dryRun.actions.noMatches",
+  rule_skipped: "preferences.workflowDialog.dryRun.actions.ruleSkipped",
 }
 
 // Outside the map: an action of this name would otherwise claim its own fallback.
@@ -212,6 +213,8 @@ function formatDryRunEventSummary(
     }
     case "dry_run_no_match":
       return t("preferences.workflowDialog.dryRun.summary.noMatches")
+    case "rule_skipped":
+      return getRuleSkipReason(details, t)
     case "paused":
     case "resumed":
     case "rechecked":
@@ -229,17 +232,6 @@ function formatDryRunEventSummary(
     default:
       return t("preferences.workflowDialog.dryRun.summary.completed")
   }
-}
-
-function getDisabledFields(capabilities: Capabilities, supportsCategories: boolean, isRemote: boolean, t: ReturnType<typeof useTranslation<"instances">>["t"]): DisabledField[] {
-  const disabledFields: DisabledField[] = Object.entries(FIELD_REQUIREMENTS)
-    .filter(([, capability]) => !capabilities[capability as keyof Capabilities])
-    .map(([field, capability]) => ({ field, reason: getCapabilityReason(capability, t, isRemote) }))
-
-  if (!supportsCategories) {
-    disabledFields.push({ field: "CATEGORY", reason: t("preferences.transmission.unsupported") })
-  }
-  return disabledFields
 }
 
 function getDisabledStateValues(capabilities: Capabilities, t: ReturnType<typeof useTranslation<"instances">>["t"]): DisabledStateValue[] {
@@ -593,10 +585,6 @@ export function WorkflowDialog({ open, onOpenChange, instanceId, rule, onSuccess
   const { user } = useAuth()
   const canExecuteExternalPrograms = user?.role === "admin" || user?.permissions?.includes("execute_external_programs") === true
   const queryClient = useQueryClient()
-  const simpleSortDisabledFields = useMemo(() => {
-    const reason = t("preferences.workflowDialog.priority.notSupportedForSimpleSort")
-    return SIMPLE_SORT_DISABLED_FIELDS.map(field => ({ field, reason }))
-  }, [t])
   const scoreMultiplierDisabledFields = useMemo(() => {
     const reason = t("preferences.workflowDialog.priority.notSupportedForScoreMultiplier")
     return SCORE_MULTIPLIER_DISABLED_FIELDS.map(field => ({ field, reason }))
@@ -692,7 +680,6 @@ export function WorkflowDialog({ open, onOpenChange, instanceId, rule, onSuccess
   })
   const hasNotificationTargets = (notificationTargets ?? []).length > 0
 
-  const supportsTrackerHealth = capabilities?.supportsTrackerHealth ?? false
   const supportsFreeSpacePathSource = capabilities?.supportsFreeSpacePathSource ?? false
   const supportsPathAutocomplete = capabilities?.supportsPathAutocomplete ?? false
   const ruleInstance = useMemo(() => instances?.find(i => i.id === instanceId), [instances, instanceId])
@@ -706,12 +693,28 @@ export function WorkflowDialog({ open, onOpenChange, instanceId, rule, onSuccess
 
   const fieldCapabilities = useMemo<Capabilities>(
     () => ({
-      trackerHealth: supportsTrackerHealth,
+      supportsLiveReannounce: capabilities?.supportsLiveReannounce ?? false,
+      supportsListFieldsV5: capabilities?.supportsListFieldsV5 ?? false,
+      supportsTrackerHealth: capabilities?.supportsTrackerHealth ?? false,
+      supportsListCreatedBy: capabilities?.supportsListCreatedBy ?? false,
       read: canRead,
       trustedIdentity: hasTrustedIdentity,
     }),
-    [supportsTrackerHealth, canRead, hasTrustedIdentity]
+    [capabilities, canRead, hasTrustedIdentity]
   )
+  const disabledFields = useMemo(() => [
+    ...getDisabledFields(fieldCapabilities, isRemoteInstance, t),
+    ...(!supportsQbittorrentOnlyActions ? [{ field: "CATEGORY", reason: t("preferences.transmission.unsupported") }] : []),
+  ], [fieldCapabilities, isRemoteInstance, supportsQbittorrentOnlyActions, t])
+  // A field the instance does not send cannot sort either. The first reason wins, so a field
+  // that cannot sort at all keeps the sort reason.
+  const simpleSortDisabledFields = useMemo(() => {
+    const reason = t("preferences.workflowDialog.priority.notSupportedForSimpleSort")
+    return [
+      ...SIMPLE_SORT_DISABLED_FIELDS.map(field => ({ field, reason })),
+      ...disabledFields,
+    ]
+  }, [t, disabledFields])
 
   // Callback for path autocomplete suggestion selection
   const handleFreeSpacePathSelect = useCallback((path: string) => {
@@ -2474,7 +2477,7 @@ export function WorkflowDialog({ open, onOpenChange, instanceId, rule, onSuccess
                               }}
                               categoryOptions={categoryOptions}
                               allowCategoryOperators={supportsQbittorrentOnlyActions}
-                              disabledFields={getDisabledFields(fieldCapabilities, supportsQbittorrentOnlyActions, isRemoteInstance, t)}
+                              disabledFields={disabledFields}
                               disabledStateValues={getDisabledStateValues(fieldCapabilities, t)}
                             />
                             <div className="flex items-center gap-2">
@@ -2557,7 +2560,7 @@ export function WorkflowDialog({ open, onOpenChange, instanceId, rule, onSuccess
                     allowEmpty
                     categoryOptions={categoryOptions}
                     allowCategoryOperators={supportsQbittorrentOnlyActions}
-                    disabledFields={getDisabledFields(fieldCapabilities, supportsQbittorrentOnlyActions, isRemoteInstance, t)}
+                    disabledFields={disabledFields}
                     disabledStateValues={getDisabledStateValues(fieldCapabilities, t)}
                     groupOptions={groupedConditionOptions}
                   />
@@ -2595,6 +2598,8 @@ export function WorkflowDialog({ open, onOpenChange, instanceId, rule, onSuccess
                         <p className="text-xs text-muted-foreground">
                           {t("preferences.workflowDialog.addConditionsToPreview")}
                         </p>
+                      ) : livePreviewResult.skipped ? (
+                        <p className="text-xs text-amber-500">{getRuleSkipReason(livePreviewResult.skipped, t)}</p>
                       ) : (
                         <>
                           <p className="text-xs text-muted-foreground">

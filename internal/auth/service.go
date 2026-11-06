@@ -139,12 +139,16 @@ func (s *Service) ChangePassword(ctx context.Context, oldPassword, newPassword s
 // API Key Management
 
 // CreateAPIKey generates a new API key
-func (s *Service) CreateAPIKey(ctx context.Context, name string) (string, *models.APIKey, error) {
-	return s.apiKeyStore.Create(ctx, name)
+func (s *Service) CreateAPIKey(ctx context.Context, name string, permissions []models.Permission, instanceIDs []int) (string, *models.APIKey, error) {
+	return s.apiKeyStore.Create(ctx, name, permissions, instanceIDs)
 }
 
-func (s *Service) CreateAPIKeyForUser(ctx context.Context, userID int, name string) (string, *models.APIKey, error) {
-	return s.apiKeyStore.CreateForUser(ctx, userID, name)
+func (s *Service) UpdateAPIKey(ctx context.Context, id int, name string, permissions []models.Permission, instanceIDs []int) (*models.APIKey, error) {
+	return s.apiKeyStore.Update(ctx, id, name, permissions, instanceIDs)
+}
+
+func (s *Service) CreateAPIKeyForUser(ctx context.Context, userID int, name string, permissions []models.Permission, instanceIDs []int) (string, *models.APIKey, error) {
+	return s.apiKeyStore.CreateForUser(ctx, userID, name, permissions, instanceIDs)
 }
 
 // ValidateAPIKey checks if an API key is valid
@@ -291,4 +295,8 @@ func (s *Service) GetUser(ctx context.Context, id int) (*models.User, error) {
 }
 func (s *Service) FindUser(ctx context.Context, username string) (*models.User, error) {
 	return s.userStore.GetByUsernameWithRole(ctx, username)
+}
+
+func (s *Service) UpdateAPIKeyForUser(ctx context.Context, id, userID int, admin bool, name string, permissions []models.Permission, instanceIDs []int) (*models.APIKey, error) {
+	return s.apiKeyStore.UpdateForUser(ctx, id, userID, admin, name, permissions, instanceIDs)
 }

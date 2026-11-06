@@ -18,7 +18,7 @@ import (
 
 func TestUpstreamMergePreservesForkSQLite(t *testing.T) {
 	t.Parallel()
-	for _, cutoff := range []string{"097_scope_client_settings_to_users.sql", "110_restore_fork_instance_view.sql", "112_restore_fork_instance_ssh_tier_view.sql"} {
+	for _, cutoff := range []string{"097_scope_client_settings_to_users.sql", "110_restore_fork_instance_view.sql", "112_restore_fork_instance_ssh_tier_view.sql", "117_restore_fork_instance_hardlink_view.sql"} {
 		t.Run(cutoff, func(t *testing.T) {
 			conn, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "fork.db"))
 			require.NoError(t, err)
@@ -37,7 +37,7 @@ func TestUpstreamMergePreservesForkSQLite(t *testing.T) {
 
 func TestUpstreamMergePreservesForkPostgresIntegration(t *testing.T) {
 	t.Parallel()
-	for _, cutoff := range []string{"098_scope_client_settings_to_users.sql", "111_restore_fork_instance_view.sql", "113_restore_fork_instance_ssh_tier_view.sql"} {
+	for _, cutoff := range []string{"098_scope_client_settings_to_users.sql", "111_restore_fork_instance_view.sql", "113_restore_fork_instance_ssh_tier_view.sql", "118_restore_fork_instance_hardlink_view.sql"} {
 		t.Run(cutoff, func(t *testing.T) {
 			ctx, dsn := openPostgresTestSchema(t)
 			conn, err := sql.Open("pgx", dsn)

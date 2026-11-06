@@ -541,6 +541,7 @@ export function Torrents({ instanceId, instanceName, isAllInstancesView = false,
           <FilterSidebar
             key={`filter-sidebar-${instanceId}`}
             instanceId={instanceId}
+            instanceIds={unifiedScopeInstanceIds}
             readOnly={isAllInstances}
             supportsTrackerHealth={isAllInstances ? supportsTrackerHealth : undefined}
             selectedFilters={filters}
@@ -578,6 +579,7 @@ export function Torrents({ instanceId, instanceName, isAllInstancesView = false,
             <FilterSidebar
               key={`filter-sidebar-mobile-${instanceId}`}
               instanceId={instanceId}
+              instanceIds={unifiedScopeInstanceIds}
               readOnly={isAllInstances}
               supportsTrackerHealth={isAllInstances ? supportsTrackerHealth : undefined}
               selectedFilters={filters}

@@ -10,4 +10,6 @@ const (
 	Username Key = iota
 	UserID
 	UserRole
+	// APIKey holds the *models.APIKey that authenticated the request. A session or auth-disabled request has none.
+	APIKey
 )

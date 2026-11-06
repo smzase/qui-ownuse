@@ -13,7 +13,7 @@
     "externalPrograms": "Programmes Externes",
     "notifications": "Notifications",
     "dateTime": "Heure et Langue",
-    "premiumThemes": "Thèmes Premium",
+    "premiumThemes": "Thèmes",
     "security": "Sécurité",
     "logs": "Logs"
   },
@@ -464,17 +464,17 @@
     "selector": {
       "title": "Sélection de thème",
       "loadingDescription": "Chargement des thèmes disponibles...",
-      "description": "Choisissez parmi les thèmes. Les thèmes premium nécessitent une licence valide.",
-      "verificationUnavailable": "Vérification de licence indisponible. Le changement de thème premium est désactivé.",
-      "premium": "Premium",
-      "pro": "Pro",
+      "description": "Choisissez parmi les thèmes. Certains thèmes nécessitent une licence valide.",
+      "verificationUnavailable": "Vérification de licence indisponible. Le passage à un thème sous licence est temporairement désactivé.",
       "free": "Gratuit",
       "locked": "Verrouillé",
-      "lock": "Verrouillé"
+      "lock": "Verrouillé",
+      "showTheme": "Afficher",
+      "hideTheme": "Masquer"
     },
     "toasts": {
-      "premiumRequired": "Licence Premium requise",
-      "premiumRequiredDescription": "Débloquez les thèmes premium en ajoutant une licence valide."
+      "premiumRequired": "Licence requise",
+      "premiumRequiredDescription": "Ajoutez une licence valide pour débloquer tous les thèmes."
     },
     "license": {
       "errors": {
@@ -496,9 +496,9 @@
     "custom": {
       "badge": "Personnalisé",
       "title": "Thèmes personnalisés",
-      "lockedTitle": "Les thèmes personnalisés sont une fonctionnalité premium",
-      "lockedDescription": "Débloquez le premium pour charger vos propres fichiers CSS de thème depuis un dossier sur le disque.",
-      "unlockCta": "Débloquer le premium",
+      "lockedTitle": "Les thèmes personnalisés nécessitent une licence",
+      "lockedDescription": "Obtenez une licence pour charger vos propres fichiers CSS de thème depuis un dossier sur le disque.",
+      "unlockCta": "Obtenir une licence",
       "refresh": "Actualiser",
       "detectedCount": "Thèmes trouvés : {{total}}",
       "parseErrorsTitle": "Impossible d'analyser ces fichiers :",

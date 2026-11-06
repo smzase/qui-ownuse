@@ -20,8 +20,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
 
+	"github.com/autobrr/qui/internal/api/middleware"
 	"github.com/autobrr/qui/internal/domain"
 	"github.com/autobrr/qui/internal/models"
+	"github.com/autobrr/qui/internal/qbittorrent"
 	"github.com/autobrr/qui/internal/services/crossseed"
 	"github.com/autobrr/qui/internal/services/crossseed/gazellemusic"
 	"github.com/autobrr/qui/internal/services/crossseedroute"
@@ -533,9 +535,7 @@ func (h *CrossSeedHandler) Routes(
 	instanceAccessMiddleware func(http.Handler) http.Handler,
 	globalSettingsMiddleware func(http.Handler) http.Handler,
 ) {
-	withInstanceAccess := func(next http.Handler) http.Handler {
-		return authMiddleware(userContextMiddleware(instanceAccessMiddleware(next)))
-	}
+	crossSeed := middleware.Permissions(models.AreaCrossSeed)
 	withUserContext := func(next http.Handler) http.Handler {
 		return authMiddleware(userContextMiddleware(next))
 	}
@@ -547,61 +547,61 @@ func (h *CrossSeedHandler) Routes(
 	}
 
 	// Register instance-scoped route at top level
-	r.With(withInstanceAccess).Get("/instances/{instanceID}/cross-seed/status", h.GetCrossSeedStatus)
+	r.With(withUserContext, crossSeed.Read, instanceAccessMiddleware).Get("/instances/{instanceID}/cross-seed/status", h.GetCrossSeedStatus)
 
 	r.Route("/cross-seed", func(r chi.Router) {
-		r.With(withAPIKeyUserContext).Post("/apply", h.AutobrrApply)
+		r.With(withAPIKeyUserContext, crossSeed.Run).Post("/apply", h.AutobrrApply)
 		r.Route("/webhook", func(r chi.Router) {
-			r.With(withAPIKeyUserContext).Post("/check", h.WebhookCheck)
+			r.With(withAPIKeyUserContext, crossSeed.Run).Post("/check", h.WebhookCheck)
 		})
 
-		r.With(withInstanceAccess).Route("/torrents", func(r chi.Router) {
-			r.Get("/{instanceID}/{hash}/analyze", h.AnalyzeTorrentForSearch)
-			r.Get("/{instanceID}/{hash}/local-matches", h.GetLocalMatches)
-			r.Post("/{instanceID}/{hash}/search", h.SearchTorrentMatches)
-			r.Post("/{instanceID}/{hash}/apply", h.ApplyTorrentSearchResults)
+		r.With(withUserContext).Route("/torrents", func(r chi.Router) {
+			r.With(crossSeed.Read, instanceAccessMiddleware).Get("/{instanceID}/{hash}/analyze", h.AnalyzeTorrentForSearch)
+			r.With(crossSeed.Read, instanceAccessMiddleware).Get("/{instanceID}/{hash}/local-matches", h.GetLocalMatches)
+			r.With(crossSeed.Read, instanceAccessMiddleware).Post("/{instanceID}/{hash}/search", h.SearchTorrentMatches)
+			r.With(crossSeed.Write, instanceAccessMiddleware).Post("/{instanceID}/{hash}/apply", h.ApplyTorrentSearchResults)
 		})
-		r.With(withUserContext).Get("/settings", h.GetAutomationSettings)
-		r.With(withGlobalSettingsContext).Patch("/settings", h.PatchAutomationSettings)
-		r.With(withGlobalSettingsContext).Put("/settings", h.UpdateAutomationSettings)
-		r.With(withUserContext).Get("/status", h.GetAutomationStatus)
-		r.With(withUserContext).Get("/runs", h.ListAutomationRuns)
-		r.With(withGlobalSettingsContext).Post("/run", h.TriggerAutomationRun)
-		r.With(withGlobalSettingsContext).Post("/run/cancel", h.CancelAutomationRun)
+		r.With(withUserContext, crossSeed.Read).Get("/settings", h.GetAutomationSettings)
+		r.With(withGlobalSettingsContext, crossSeed.Write).Patch("/settings", h.PatchAutomationSettings)
+		r.With(withGlobalSettingsContext, crossSeed.Write).Put("/settings", h.UpdateAutomationSettings)
+		r.With(withUserContext, crossSeed.Read).Get("/status", h.GetAutomationStatus)
+		r.With(withUserContext, crossSeed.Read).Get("/runs", h.ListAutomationRuns)
+		r.With(withGlobalSettingsContext, crossSeed.Run).Post("/run", h.TriggerAutomationRun)
+		r.With(withGlobalSettingsContext, crossSeed.Run).Post("/run/cancel", h.CancelAutomationRun)
 		r.With(withUserContext).Route("/blocklist", func(r chi.Router) {
-			r.Get("/", h.ListBlocklist)
-			r.With(withGlobalSettingsContext).Post("/", h.AddBlocklistEntry)
-			r.With(instanceAccessMiddleware).Delete("/{instanceID}/{infohash}", h.DeleteBlocklistEntry)
+			r.With(crossSeed.Read).Get("/", h.ListBlocklist)
+			r.With(withGlobalSettingsContext, crossSeed.Write).Post("/", h.AddBlocklistEntry)
+			r.With(crossSeed.Write, instanceAccessMiddleware).Delete("/{instanceID}/{infohash}", h.DeleteBlocklistEntry)
 		})
 		r.With(withUserContext).Route("/search", func(r chi.Router) {
-			r.Get("/settings", h.GetSearchSettings)
-			r.With(withGlobalSettingsContext).Patch("/settings", h.PatchSearchSettings)
-			r.Get("/status", h.GetSearchRunStatus)
-			r.With(withGlobalSettingsContext).Post("/run", h.StartSearchRun)
-			r.With(withGlobalSettingsContext).Post("/run/cancel", h.CancelSearchRun)
-			r.Get("/runs", h.ListSearchRunHistory)
+			r.With(crossSeed.Read).Get("/settings", h.GetSearchSettings)
+			r.With(withGlobalSettingsContext, crossSeed.Write).Patch("/settings", h.PatchSearchSettings)
+			r.With(crossSeed.Read).Get("/status", h.GetSearchRunStatus)
+			r.With(withGlobalSettingsContext, crossSeed.Run).Post("/run", h.StartSearchRun)
+			r.With(withGlobalSettingsContext, crossSeed.Run).Post("/run/cancel", h.CancelSearchRun)
+			r.With(crossSeed.Read).Get("/runs", h.ListSearchRunHistory)
 		})
 		r.With(withUserContext).Route("/manual", func(r chi.Router) {
-			r.Post("/proposals", h.ManualMatchProposals)
-			r.Post("/apply", h.ManualMatchApply)
-			r.Post("/assemble/check", h.ManualAssembleCheck)
-			r.Post("/assemble", h.ManualAssembleApply)
+			r.With(crossSeed.Read).Post("/proposals", h.ManualMatchProposals)
+			r.With(crossSeed.Write).Post("/apply", h.ManualMatchApply)
+			r.With(crossSeed.Read).Post("/assemble/check", h.ManualAssembleCheck)
+			r.With(crossSeed.Write).Post("/assemble", h.ManualAssembleApply)
 		})
 		r.With(withUserContext).Route("/completion", func(r chi.Router) {
-			r.With(instanceAccessMiddleware).Get("/{instanceID}", h.GetInstanceCompletionSettings)
-			r.With(instanceAccessMiddleware).Put("/{instanceID}", h.UpdateInstanceCompletionSettings)
+			r.With(crossSeed.Read, instanceAccessMiddleware).Get("/{instanceID}", h.GetInstanceCompletionSettings)
+			r.With(crossSeed.Write, instanceAccessMiddleware).Put("/{instanceID}", h.UpdateInstanceCompletionSettings)
 		})
 		r.With(withUserContext).Route("/routes", func(r chi.Router) {
-			r.Get("/", h.ListCrossSeedRoutes)
-			r.Get("/{instanceID}", h.GetCrossSeedRoute)
-			r.Put("/{instanceID}", h.SaveCrossSeedRoute)
-			r.Delete("/{instanceID}", h.ClearCrossSeedRoute)
-			r.Post("/{instanceID}/test", h.TestCrossSeedRoute)
+			r.With(crossSeed.Read).Get("/", h.ListCrossSeedRoutes)
+			r.With(crossSeed.Read).Get("/{instanceID}", h.GetCrossSeedRoute)
+			r.With(crossSeed.Write).Put("/{instanceID}", h.SaveCrossSeedRoute)
+			r.With(crossSeed.Write).Delete("/{instanceID}", h.ClearCrossSeedRoute)
+			r.With(crossSeed.Write).Post("/{instanceID}/test", h.TestCrossSeedRoute)
 		})
 		r.Route("/season-pack", func(r chi.Router) {
-			r.With(withAPIKeyUserContext).Post("/check", h.SeasonPackCheck)
-			r.With(withAPIKeyUserContext).Post("/apply", h.SeasonPackApply)
-			r.With(withUserContext).Get("/runs", h.ListSeasonPackRuns)
+			r.With(withAPIKeyUserContext, crossSeed.Run).Post("/check", h.SeasonPackCheck)
+			r.With(withAPIKeyUserContext, crossSeed.Run).Post("/apply", h.SeasonPackApply)
+			r.With(withUserContext, crossSeed.Read).Get("/runs", h.ListSeasonPackRuns)
 		})
 	})
 }
@@ -711,7 +711,17 @@ func (h *CrossSeedHandler) GetLocalMatches(w http.ResponseWriter, r *http.Reques
 		response.Matches = visibleMatches
 	}
 
+	hideMatchPasskeys(r, response.Matches)
 	RespondJSON(w, http.StatusOK, response)
+}
+
+func hideMatchPasskeys(r *http.Request, matches []crossseed.LocalMatch) {
+	if middleware.CanReadTrackerPasskeys(r) {
+		return
+	}
+	for i := range matches {
+		matches[i].Tracker = qbittorrent.TrackerOrigin(matches[i].Tracker)
+	}
 }
 
 // SearchTorrentMatches godoc
@@ -914,6 +924,7 @@ func mapCrossSeedErrorStatus(err error) int {
 		errors.Is(err, crossseed.ErrTorrentNotFound),
 		errors.Is(err, crossseed.ErrTorrentNotComplete),
 		errors.Is(err, crossseed.ErrSourceNotSettled),
+		errors.Is(err, crossseed.ErrSourceErrored),
 		errors.Is(err, crossseed.ErrNoIndexersConfigured):
 		return http.StatusBadRequest
 	default:

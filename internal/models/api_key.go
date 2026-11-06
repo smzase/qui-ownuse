@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -22,12 +24,14 @@ var ErrAPIKeyNotFound = errors.New("api key not found")
 var ErrInvalidAPIKey = errors.New("invalid api key")
 
 type APIKey struct {
-	ID         int        `json:"id"`
-	UserID     int        `json:"-"`
-	KeyHash    string     `json:"-"`
-	Name       string     `json:"name"`
-	CreatedAt  time.Time  `json:"createdAt"`
-	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	ID          int          `json:"id"`
+	UserID      int          `json:"-"`
+	KeyHash     string       `json:"-"`
+	Name        string       `json:"name"`
+	CreatedAt   time.Time    `json:"createdAt"`
+	LastUsedAt  *time.Time   `json:"lastUsedAt,omitempty"`
+	Permissions []Permission `json:"permissions"`
+	InstanceIDs []int        `json:"instanceIds"`
 }
 
 type APIKeyStore struct {
@@ -53,11 +57,11 @@ func HashAPIKey(key string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (s *APIKeyStore) Create(ctx context.Context, name string) (string, *APIKey, error) {
-	return s.CreateForUser(ctx, 1, name)
+func (s *APIKeyStore) Create(ctx context.Context, name string, permissions []Permission, instanceIDs []int) (string, *APIKey, error) {
+	return s.CreateForUser(ctx, 1, name, permissions, instanceIDs)
 }
 
-func (s *APIKeyStore) CreateForUser(ctx context.Context, userID int, name string) (string, *APIKey, error) {
+func (s *APIKeyStore) CreateForUser(ctx context.Context, userID int, name string, permissions []Permission, instanceIDs []int) (string, *APIKey, error) {
 	// Generate new API key
 	rawKey, err := GenerateAPIKey()
 	if err != nil {
@@ -80,14 +84,22 @@ func (s *APIKeyStore) CreateForUser(ctx context.Context, userID int, name string
 		return "", nil, fmt.Errorf("failed to intern name: %w", err)
 	}
 
+	if instanceIDs == nil {
+		instanceIDs = []int{}
+	}
+	permissionsJSON, instanceIDsJSON, err := encodeAPIKeyAccess(permissions, instanceIDs)
+	if err != nil {
+		return "", nil, err
+	}
+
 	// Insert the API key
-	apiKey := &APIKey{}
+	apiKey := &APIKey{Permissions: permissions, InstanceIDs: instanceIDs}
 	var createdAt, lastUsedAt sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO api_keys (key_hash, name_id, user_id)
-		VALUES (?, ?, ?)
+		INSERT INTO api_keys (key_hash, name_id, user_id, permissions, instance_ids)
+		VALUES (?, ?, ?, ?, ?)
 		RETURNING id, key_hash, user_id, created_at, last_used_at
-	`, keyHash, ids[0], userID).Scan(
+	`, keyHash, ids[0], userID, permissionsJSON, instanceIDsJSON).Scan(
 		&apiKey.ID,
 		&apiKey.KeyHash,
 		&apiKey.UserID,
@@ -115,14 +127,14 @@ func (s *APIKeyStore) CreateForUser(ctx context.Context, userID int, name string
 
 func (s *APIKeyStore) GetByHash(ctx context.Context, keyHash string) (*APIKey, error) {
 	query := `
-		SELECT ak.id, ak.key_hash, ak.user_id, sp.value, ak.created_at, ak.last_used_at
+		SELECT ak.id, ak.key_hash, ak.user_id, sp.value, ak.created_at, ak.last_used_at, ak.permissions, ak.instance_ids
 		FROM api_keys ak
 		INNER JOIN string_pool sp ON ak.name_id = sp.id
 		WHERE ak.key_hash = ?
 	`
 
 	var id int
-	var keyHashResult, name string
+	var keyHashResult, name, permissionsJSON, instanceIDsJSON string
 	var userID int
 	var createdAt sql.NullTime
 	var lastUsedAt sql.NullTime
@@ -134,6 +146,8 @@ func (s *APIKeyStore) GetByHash(ctx context.Context, keyHash string) (*APIKey, e
 		&name,
 		&createdAt,
 		&lastUsedAt,
+		&permissionsJSON,
+		&instanceIDsJSON,
 	)
 
 	if err != nil {
@@ -155,13 +169,16 @@ func (s *APIKeyStore) GetByHash(ctx context.Context, keyHash string) (*APIKey, e
 	if lastUsedAt.Valid {
 		apiKey.LastUsedAt = &lastUsedAt.Time
 	}
+	if err := apiKey.decodeAccess(permissionsJSON, instanceIDsJSON); err != nil {
+		return nil, err
+	}
 
 	return apiKey, nil
 }
 
 func (s *APIKeyStore) List(ctx context.Context) ([]*APIKey, error) {
 	return s.list(ctx, `
-		SELECT ak.id, ak.key_hash, ak.user_id, sp.value, ak.created_at, ak.last_used_at
+		SELECT ak.id, ak.key_hash, ak.user_id, sp.value, ak.created_at, ak.last_used_at, ak.permissions, ak.instance_ids
 		FROM api_keys ak
 		INNER JOIN string_pool sp ON ak.name_id = sp.id
 		ORDER BY ak.created_at DESC
@@ -174,7 +191,7 @@ func (s *APIKeyStore) ListForUser(ctx context.Context, userID int, admin bool) (
 	}
 
 	return s.list(ctx, `
-		SELECT ak.id, ak.key_hash, ak.user_id, sp.value, ak.created_at, ak.last_used_at
+		SELECT ak.id, ak.key_hash, ak.user_id, sp.value, ak.created_at, ak.last_used_at, ak.permissions, ak.instance_ids
 		FROM api_keys ak
 		INNER JOIN string_pool sp ON ak.name_id = sp.id
 		WHERE ak.user_id = ?
@@ -192,7 +209,7 @@ func (s *APIKeyStore) list(ctx context.Context, query string, args ...any) ([]*A
 	keys := make([]*APIKey, 0)
 	for rows.Next() {
 		var id int
-		var keyHash, name string
+		var keyHash, name, permissionsJSON, instanceIDsJSON string
 		var userID int
 		var createdAt sql.NullTime
 		var lastUsedAt sql.NullTime
@@ -204,6 +221,8 @@ func (s *APIKeyStore) list(ctx context.Context, query string, args ...any) ([]*A
 			&name,
 			&createdAt,
 			&lastUsedAt,
+			&permissionsJSON,
+			&instanceIDsJSON,
 		)
 		if err != nil {
 			return nil, err
@@ -220,6 +239,9 @@ func (s *APIKeyStore) list(ctx context.Context, query string, args ...any) ([]*A
 		if lastUsedAt.Valid {
 			apiKey.LastUsedAt = &lastUsedAt.Time
 		}
+		if err := apiKey.decodeAccess(permissionsJSON, instanceIDsJSON); err != nil {
+			return nil, err
+		}
 
 		keys = append(keys, apiKey)
 	}
@@ -229,6 +251,95 @@ func (s *APIKeyStore) list(ctx context.Context, query string, args ...any) ([]*A
 	}
 
 	return keys, nil
+}
+
+// Update sets the name, the Permissions, and the Instance limit of the key.
+func (s *APIKeyStore) Update(ctx context.Context, id int, name string, permissions []Permission, instanceIDs []int) (*APIKey, error) {
+	return s.UpdateForUser(ctx, id, 0, true, name, permissions, instanceIDs)
+}
+
+func (s *APIKeyStore) UpdateForUser(ctx context.Context, id, userID int, admin bool, name string, permissions []Permission, instanceIDs []int) (*APIKey, error) {
+	if instanceIDs == nil {
+		instanceIDs = []int{}
+	}
+	permissionsJSON, instanceIDsJSON, err := encodeAPIKeyAccess(permissions, instanceIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	ids, err := dbinterface.InternStringNullable(ctx, tx, &name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to intern name: %w", err)
+	}
+
+	apiKey := &APIKey{ID: id, Name: name, Permissions: permissions, InstanceIDs: instanceIDs}
+	var createdAt, lastUsedAt sql.NullTime
+	query := `UPDATE api_keys SET name_id = ?, permissions = ?, instance_ids = ? WHERE id = ?`
+	args := []any{ids[0], permissionsJSON, instanceIDsJSON, id}
+	if !admin {
+		query += ` AND user_id = ?`
+		args = append(args, userID)
+	}
+	query += ` RETURNING key_hash, user_id, created_at, last_used_at`
+	err = tx.QueryRowContext(ctx, query, args...).Scan(&apiKey.KeyHash, &apiKey.UserID, &createdAt, &lastUsedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrAPIKeyNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	apiKey.CreatedAt = createdAt.Time
+	if lastUsedAt.Valid {
+		apiKey.LastUsedAt = &lastUsedAt.Time
+	}
+	return apiKey, nil
+}
+
+func encodeAPIKeyAccess(permissions []Permission, instanceIDs []int) (string, string, error) {
+	permissionsJSON, err := json.Marshal(permissions)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode permissions: %w", err)
+	}
+	instanceIDsJSON, err := json.Marshal(instanceIDs)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to encode instance limit: %w", err)
+	}
+	return string(permissionsJSON), string(instanceIDsJSON), nil
+}
+
+// decodedPermissions maps a stored Permission list to its decoded form. Each
+// request with an API key reads the key again, and a key holds one of a few
+// lists. The slices are shared: callers must not change them.
+var decodedPermissions sync.Map
+
+func (k *APIKey) decodeAccess(permissionsJSON, instanceIDsJSON string) error {
+	if cached, ok := decodedPermissions.Load(permissionsJSON); ok {
+		k.Permissions = cached.([]Permission)
+	} else {
+		if err := json.Unmarshal([]byte(permissionsJSON), &k.Permissions); err != nil {
+			return fmt.Errorf("failed to decode permissions of API key %d: %w", k.ID, err)
+		}
+		decodedPermissions.Store(permissionsJSON, k.Permissions)
+	}
+	if instanceIDsJSON == "[]" {
+		k.InstanceIDs = []int{}
+		return nil
+	}
+	if err := json.Unmarshal([]byte(instanceIDsJSON), &k.InstanceIDs); err != nil {
+		return fmt.Errorf("failed to decode instance limit of API key %d: %w", k.ID, err)
+	}
+	return nil
 }
 
 func (s *APIKeyStore) UpdateLastUsed(ctx context.Context, id int) error {

@@ -64,6 +64,24 @@ jobs:
           name: web-dist
           path: web/dist
 
+      - name: Set up Go for notices
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Write the notices file
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/autobrr/qui-community-themes/main/LICENSE -o internal/themes/assets/premium/LICENSE
+          go run ./scripts/notices
+
+      - name: Upload the notices file
+        uses: actions/upload-artifact@v7
+        with:
+          name: notices
+          path: THIRD_PARTY_NOTICES
+          if-no-files-found: error
+
   build-windows:
     name: Build Windows binary
     runs-on: ubuntu-latest
@@ -93,16 +111,24 @@ jobs:
           GOARCH: amd64
           VERSION: ${{ github.event.inputs.version || 'dev' }}
         run: |
+          make themes-fetch
           go build -trimpath \
             -ldflags "-s -w -X github.com/autobrr/qui/internal/buildinfo.Version=$VERSION -X github.com/autobrr/qui/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/autobrr/qui/internal/buildinfo.Commit=$(git rev-parse HEAD)" \
             -o qui_windows_amd64.exe \
             ./cmd/qui
 
+      - name: Download the notices file
+        uses: actions/download-artifact@v8
+        with:
+          name: notices
+
       - name: Upload Windows binary
         uses: actions/upload-artifact@v7
         with:
           name: qui-windows-amd64
-          path: qui_windows_amd64.exe
+          path: |
+            qui_windows_amd64.exe
+            THIRD_PARTY_NOTICES
 
   build-linux:
     name: Build Linux binary (${{ matrix.goarch }})
@@ -137,14 +163,22 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           VERSION: ${{ github.event.inputs.version || 'dev' }}
         run: |
+          make themes-fetch
           go build -trimpath \
             -ldflags "-s -w -X github.com/autobrr/qui/internal/buildinfo.Version=$VERSION -X github.com/autobrr/qui/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/autobrr/qui/internal/buildinfo.Commit=$(git rev-parse HEAD)" \
             -o qui \
             ./cmd/qui
           chmod +x qui
 
+      - name: Download the notices file
+        uses: actions/download-artifact@v8
+        with:
+          name: notices
+
       - name: Upload Linux binary
         uses: actions/upload-artifact@v7
         with:
           name: qui-linux-${{ matrix.goarch }}
-          path: qui
+          path: |
+            qui
+            THIRD_PARTY_NOTICES

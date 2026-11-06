@@ -16,7 +16,7 @@ import type { useTorrentListActions } from "@/hooks/useTorrentListController"
 import type { useTorrentsList } from "@/hooks/useTorrentsList"
 import { api } from "@/lib/api"
 import { resolveTorrentTargetCapabilities } from "@/lib/instance-capabilities"
-import { actionTargetRequest, type ActionTarget } from "@/lib/torrent-selection"
+import { actionTargetInstanceIds, actionTargetRequest, type ActionTarget } from "@/lib/torrent-selection"
 import { getCommonCategory, getCommonSavePath } from "@/lib/torrent-utils"
 import type { Category, CrossInstanceTorrent, InstanceResponse } from "@/types"
 import { useQuery } from "@tanstack/react-query"
@@ -203,6 +203,7 @@ export function TorrentTableDialogs({
   const { t } = useTranslation("torrents")
   const { count, previewTorrents } = actionTarget
   const isAllSelected = actionTarget.kind === "selectAll"
+  const actionInstanceIds = useMemo(() => actionTargetInstanceIds(actionTarget, instanceId), [actionTarget, instanceId])
 
   const targetCapabilities = useMemo(() => resolveTorrentTargetCapabilities({
     torrents: previewTorrents,
@@ -333,8 +334,7 @@ export function TorrentTableDialogs({
         onConfirm={handleSetShareLimitWrapper}
         isPending={isPending}
         supportsSeedingTimeLimit={supportsQbittorrentOnlyActions}
-        supportsShareLimitsAction={supportsQbittorrentOnlyActions && (capabilities?.supportsShareLimitsAction ?? false)}
-        supportsShareLimitsMode={supportsQbittorrentOnlyActions && (capabilities?.supportsShareLimitsMode ?? false)}
+        instanceIds={actionInstanceIds}
       />
 
       <SpeedLimitsDialog

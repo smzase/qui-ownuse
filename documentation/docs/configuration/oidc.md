@@ -7,13 +7,13 @@ description: Log in to qui with any OpenID Connect provider, with setup steps an
 
 # OpenID Connect (OIDC)
 
-Set `QUI__OIDC_ENABLED=true` to delegate authentication to an external identity provider. You must also set the issuer, client ID, client secret, and redirect URL. If one of these values is missing, or qui cannot reach the issuer, qui does not start. When OIDC is enabled, the login screen shows an **OpenID Connect** button.
+Set `QUI__OIDC_ENABLED=true` to delegate authentication to an external identity provider. You must also set the issuer, client ID, client secret, and redirect URL. If one of these values is missing, qui does not start. If the provider is unavailable, qui starts and retries discovery on later login attempts. When OIDC is enabled, the login screen shows an **OpenID Connect** button.
 
 If your provider advertises PKCE (`S256`) support, qui uses it for the authorization flow. You do not need to configure extra settings in qui.
 To make sure that PKCE is active, inspect `/api/auth/oidc/config`. The `authorizationUrl` must include both `code_challenge=` and `code_challenge_method=S256`.
 qui does not emit a dedicated "PKCE enabled" log line, so check the authorization URL directly.
 
-qui accepts every identity that the provider permits for the qui client. qui has one user and no identity allowlist of its own. Restrict the client on the provider side, for example with a group or user assignment, so that only you can sign in.
+This fork accepts every identity that the provider permits for the qui client and resolves it to a local account by username. New accounts are standard users unless no local account exists, in which case the first account becomes an administrator. Each account keeps its own instance access and settings. Restrict access to the qui client on the provider side, for example with a group or user assignment.
 
 An `https://` redirect URL marks the session cookie as Secure, so the browser sends it only over HTTPS. See [Sessions](./reference.md#sessions).
 

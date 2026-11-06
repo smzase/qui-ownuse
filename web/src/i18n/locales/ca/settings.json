@@ -12,7 +12,7 @@
     "externalPrograms": "Programes externs",
     "notifications": "Notificacions",
     "dateTime": "Hora i idioma",
-    "premiumThemes": "Temes premium",
+    "premiumThemes": "Temes",
     "security": "Seguretat",
     "logs": "Registres",
     "users": "Usuaris"
@@ -422,17 +422,17 @@
     "selector": {
       "title": "Selecció de tema",
       "loadingDescription": "S'estan carregant els temes disponibles...",
-      "description": "Tria entre els temes disponibles. Els temes premium necessiten una llicència vàlida.",
-      "verificationUnavailable": "La verificació de llicències no està disponible. El canvi a temes premium està desactivat temporalment.",
-      "premium": "Premium",
-      "pro": "Pro",
+      "description": "Tria entre els temes disponibles. Alguns temes necessiten una llicència vàlida.",
+      "verificationUnavailable": "La verificació de llicències no està disponible. El canvi a temes amb llicència està desactivat temporalment.",
       "free": "Gratuït",
       "locked": "Bloquejat",
-      "lock": "Bloqueja"
+      "lock": "Bloqueja",
+      "showTheme": "Mostra",
+      "hideTheme": "Amaga"
     },
     "toasts": {
-      "premiumRequired": "Cal una llicència premium",
-      "premiumRequiredDescription": "Desbloqueja els temes premium afegint-hi una llicència premium vàlida."
+      "premiumRequired": "Cal una llicència",
+      "premiumRequiredDescription": "Afegeix una llicència vàlida per desbloquejar tots els temes."
     },
     "license": {
       "errors": {
@@ -454,9 +454,9 @@
     "custom": {
       "badge": "Personalitzat",
       "title": "Temes personalitzats",
-      "lockedTitle": "Els temes personalitzats són una funció premium",
-      "lockedDescription": "Desbloqueja premium per carregar els teus propis fitxers CSS de tema des d'un directori del disc.",
-      "unlockCta": "Desbloqueja premium",
+      "lockedTitle": "Els temes personalitzats necessiten una llicència",
+      "lockedDescription": "Aconsegueix una llicència per carregar els teus propis fitxers CSS de tema des d'un directori del disc.",
+      "unlockCta": "Aconsegueix una llicència",
       "refresh": "Actualitza",
       "detectedCount": "Temes trobats: {{total}}",
       "parseErrorsTitle": "No s'han pogut analitzar aquests fitxers:",

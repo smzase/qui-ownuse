@@ -138,6 +138,7 @@ var sharedMigrationFilenameRenames = []migrationFilenameRename{
 }
 
 var sqliteMigrationFilenameRenames = []migrationFilenameRename{
+	{from: "111_add_api_key_permissions.sql", to: "118_add_api_key_permissions.sql"},
 	{from: "108_add_cross_seed_routes.sql", to: "114_add_cross_seed_routes.sql"},
 	{from: "109_add_season_pack_run_added_instance.sql", to: "115_add_season_pack_run_added_instance.sql"},
 	{from: "110_add_instance_ssh_hardlink.sql", to: "116_add_instance_ssh_hardlink.sql"},
@@ -234,6 +235,7 @@ var sqliteMigrationFilenameRenames = []migrationFilenameRename{
 }
 
 var postgresMigrationFilenameRenames = []migrationFilenameRename{
+	{from: "112_add_api_key_permissions.sql", to: "119_add_api_key_permissions.sql"},
 	{from: "109_add_cross_seed_routes.sql", to: "115_add_cross_seed_routes.sql"},
 	{from: "110_add_season_pack_run_added_instance.sql", to: "116_add_season_pack_run_added_instance.sql"},
 	{from: "111_add_instance_ssh_hardlink.sql", to: "117_add_instance_ssh_hardlink.sql"},

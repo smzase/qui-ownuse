@@ -13,7 +13,7 @@
     "externalPrograms": "外部程序",
     "notifications": "通知",
     "dateTime": "时间与语言",
-    "premiumThemes": "高级主题",
+    "premiumThemes": "主题",
     "security": "安全",
     "logs": "日志"
   },
@@ -462,17 +462,17 @@
     "selector": {
       "title": "主题选择",
       "loadingDescription": "正在加载可用主题...",
-      "description": "从可用主题中选择。高级主题需要有效的许可证。",
-      "verificationUnavailable": "许可证验证不可用。高级主题切换暂时禁用。",
-      "premium": "高级",
-      "pro": "Pro",
+      "description": "从可用主题中选择。部分主题需要有效的许可证。",
+      "verificationUnavailable": "许可证验证不可用。切换到需要许可证的主题暂时禁用。",
       "free": "免费",
       "locked": "已锁定",
-      "lock": "锁定"
+      "lock": "锁定",
+      "showTheme": "显示",
+      "hideTheme": "隐藏"
     },
     "toasts": {
-      "premiumRequired": "需要高级许可证",
-      "premiumRequiredDescription": "添加有效的高级许可证以解锁高级主题。"
+      "premiumRequired": "需要许可证",
+      "premiumRequiredDescription": "添加有效的许可证以解锁所有主题。"
     },
     "license": {
       "errors": {
@@ -494,9 +494,9 @@
     "custom": {
       "badge": "自定义",
       "title": "自定义主题",
-      "lockedTitle": "自定义主题是高级功能",
-      "lockedDescription": "解锁高级版即可从磁盘目录加载你自己的主题 CSS 文件。",
-      "unlockCta": "解锁高级版",
+      "lockedTitle": "自定义主题需要许可证",
+      "lockedDescription": "获取许可证即可从磁盘目录加载你自己的主题 CSS 文件。",
+      "unlockCta": "获取许可证",
       "refresh": "刷新",
       "detectedCount": "找到的主题：{{total}}",
       "parseErrorsTitle": "无法解析以下文件：",

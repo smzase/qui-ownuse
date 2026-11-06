@@ -47,6 +47,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useCrossSeedInstanceState } from "@/hooks/useCrossSeedInstanceState"
 import { useActiveTaskCount } from "@/hooks/useActiveTaskCount"
 import { useDebounce } from "@/hooks/useDebounce"
+import { instanceCapabilitiesQuery } from "@/hooks/useInstanceCapabilities"
 import { useInstances } from "@/hooks/useInstances"
 import { usePersistedColumnFilterVisibility } from "@/hooks/usePersistedColumnFilterVisibility"
 import { usePersistedCompactViewState } from "@/hooks/usePersistedCompactViewState"
@@ -182,9 +183,7 @@ export function Header({
   )
   const unifiedCapabilitiesResults = useQueries({
     queries: unifiedManageableInstances.map((instance) => ({
-      queryKey: ["instance-capabilities", instance.id],
-      queryFn: () => api.getInstanceCapabilities(instance.id),
-      staleTime: 60_000,
+      ...instanceCapabilitiesQuery(instance.id),
       enabled: isAllInstancesRoute,
     })),
   })

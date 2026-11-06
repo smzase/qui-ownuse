@@ -15,6 +15,8 @@ qui serves interactive API documentation with Swagger UI at `/api/docs`. You can
 
 API keys give programmatic access to the qui API without session cookies. Create and manage them in Settings → API Keys.
 
+Each key belongs to the user who creates it. Its area permissions (read, run, or write) and optional instance limit further restrict that user's access. A key never grants access to an instance or operation that its owner cannot use. Standard users manage only their own keys; administrators can manage all keys. Existing keys retain their owner and receive all area permissions on upgrade.
+
 qui also has client proxy API keys. Those keys let external applications, for example Sonarr or autobrr, reach your qBittorrent instances through the qui proxy. They do not grant access to the qui API. See [Reverse Proxy](../features/reverse-proxy.md).
 
 Include your API key in the `X-API-Key` header:
@@ -32,7 +34,7 @@ The session cookie is for the qui web UI. Use an API key for scripts. See [Sessi
 
 `GET /api/stream` sends torrent updates through Server-Sent Events. See `/api/docs` for subscription parameters and event examples.
 
-The first event of a stream is `connection`. To add or remove subscriptions without a reconnect, send its `connectionId` to `POST /api/stream/subscriptions`. Each new subscription gets an `init` event before its other events, and the other subscriptions get no new `init`.
+The first event of a stream is `connection`. To add or remove subscriptions without a reconnect, send its `connectionId` to `POST /api/stream/subscriptions`. Each new subscription gets an `init` event before its other events, and the other subscriptions get no new `init`. Only the API key or session that opened the connection can change it.
 
 Keep the version from each accepted snapshot or delta. Apply a delta only when its `baseVersion` matches that version and its `minor` increases by one within the same `major`. If the versions do not match, reconnect for a full snapshot and use REST polling until it arrives.
 
@@ -42,4 +44,4 @@ In a delta, omitted counts and preferences retain their previous values. Explici
 
 - qui shows an API key only once, at creation. Save it in a safe place.
 - You can revoke each key on its own. Other keys remain active.
-- A key has the same permissions as the main user account.
+- A Browser-only route accepts only a signed-in browser and returns `403 API key not allowed; use the web UI` to a key. When authentication is disabled, qui ignores API keys and these routes accept the request. The Browser-only routes include API key management, client proxy API key management, account management and switching, instance sharing, system update and restart, binary upload, the SSH credential and host-key routes of an instance, change password, logout, and external program create, update, and delete.

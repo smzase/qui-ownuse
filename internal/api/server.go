@@ -443,15 +443,34 @@ func (s *Server) Handler() (*chi.Mux, error) {
 		r.Use(middleware.RequireSetup(s.authService, s.config.Config))
 
 		authMiddleware := middleware.IsAuthenticated(s.authService, s.sessionManager, s.config.Config)
+		browserOnly := middleware.BrowserOnly
+		requireInstance := middleware.RequireInstance
+		allInstances := middleware.AllInstances
+		// A route with no Permission check and no browserOnly is open to every key.
+		// TestRoutesRefuseKeyWithoutPermission lists those routes.
+		instances := middleware.Permissions(models.AreaInstances)
+		torrents := middleware.Permissions(models.AreaTorrents)
+		dirScan := middleware.Permissions(models.AreaDirScan)
+		automations := middleware.Permissions(models.AreaAutomations)
+		rss := middleware.Permissions(models.AreaRSS)
+		backups := middleware.Permissions(models.AreaBackups)
+		orphanScan := middleware.Permissions(models.AreaOrphanScan)
+		externalPrograms := middleware.Permissions(models.AreaExternalPrograms)
+		arr := middleware.Permissions(models.AreaArr)
+		notifications := middleware.Permissions(models.AreaNotifications)
+		settings := middleware.Permissions(models.AreaSettings)
+		logs := middleware.Permissions(models.AreaLogs)
+		system := middleware.Permissions(models.AreaSystem)
 		r.With(authMiddleware, middleware.PopulateUserContext(s.authService, s.config.Config)).Group(func(r chi.Router) {
 			// ServeContent needs the original Range header and writer to preserve byte ranges and Content-Length.
-			r.With(instancesHandler.RequireInstanceAccess).Get("/instances/{instanceID}/torrents/{hash}/files/{fileIndex}/download", torrentsHandler.DownloadTorrentContentFile)
+			r.With(requireInstance, torrents.Read, instancesHandler.RequireInstanceAccess).Get("/instances/{instanceID}/torrents/{hash}/files/{fileIndex}/download", torrentsHandler.DownloadTorrentContentFile)
 
 			// These streams bypass the buffering compressor so events flush promptly and socket write deadlines remain reachable.
 			// /stream handles its own gzip through gzipSessionWriter in internal/api/sse.
+			// /stream checks "Torrents: read" for each torrent stream that it opens.
 			r.Get("/stream", s.streamManager.Serve)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageLogs)).Get("/logs/stream", logsHandler.StreamLogs)
-			r.With(instancesHandler.RequireInstanceAccess).Get("/instances/{instanceID}/rss/events", rssSSEHandler.HandleSSE)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageLogs), logs.Read).Get("/logs/stream", logsHandler.StreamLogs)
+			r.With(requireInstance, rss.Read, instancesHandler.RequireInstanceAccess).Get("/instances/{instanceID}/rss/events", rssSSEHandler.HandleSSE)
 		})
 
 		// Every route below compresses; the group above must keep the raw writer.
@@ -483,11 +502,11 @@ func (s *Server) Handler() (*chi.Mux, error) {
 		// Cross-seed routes (query param auth for select endpoints)
 		crossSeedHandler.Routes(
 			r,
-			authMiddleware,
+			chi.Chain(authMiddleware, allInstances).Handler,
 			apiKeyQueryMiddleware,
 			middleware.PopulateUserContext(s.authService, s.config.Config),
 			instancesHandler.RequireInstanceAccess,
-			middleware.RequirePermission(s.authService, models.PermissionManageGlobalSettings),
+			middleware.RequireUserPermission(s.authService, models.PermissionManageGlobalSettings),
 		)
 
 		// Dir scan webhook (query param auth for external triggers like *arr custom scripts)
@@ -497,7 +516,7 @@ func (s *Server) Handler() (*chi.Mux, error) {
 					apiKeyQueryMiddleware,
 					authMiddleware,
 					middleware.PopulateUserContext(s.authService, s.config.Config),
-					middleware.RequirePermission(s.authService, models.PermissionManageGlobalSettings),
+					middleware.RequireUserPermission(s.authService, models.PermissionManageGlobalSettings), allInstances, dirScan.Run,
 				).Post("/scan", dirScanHandler.WebhookTriggerScan)
 			})
 		}
@@ -508,20 +527,21 @@ func (s *Server) Handler() (*chi.Mux, error) {
 
 			r.Get("/tracker-icons", trackerIconHandler.GetTrackerIcons)
 			r.Get("/peer-client-icons/{name}", peerClientIconHandler.GetPeerClientIcon)
+			// Checks "Torrents: read" for each torrent stream that it adds, and that the caller opened the connection.
 			r.Post("/stream/subscriptions", s.streamManager.ChangeSubscriptions)
 
 			// Auth routes
-			r.Post("/auth/logout", authHandler.Logout)
+			r.With(browserOnly).Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.GetCurrentUser)
-			r.Get("/users", managedUsersHandler.List)
-			r.Get("/users/share-targets", managedUsersHandler.ListShareTargets)
-			r.Post("/users", managedUsersHandler.Create)
-			r.Put("/users/{id}/role", managedUsersHandler.UpdateRole)
-			r.Put("/users/{id}/permissions", managedUsersHandler.UpdatePermissions)
-			r.Delete("/users/{id}", managedUsersHandler.Delete)
-			r.Put("/auth/change-password", authHandler.ChangePassword)
-			r.Get("/auth/switch-users", authHandler.ListSwitchUsers)
-			r.Post("/auth/switch-users", authHandler.AddSwitchUser)
+			r.With(browserOnly).Get("/users", managedUsersHandler.List)
+			r.With(browserOnly).Get("/users/share-targets", managedUsersHandler.ListShareTargets)
+			r.With(browserOnly).Post("/users", managedUsersHandler.Create)
+			r.With(browserOnly).Put("/users/{id}/role", managedUsersHandler.UpdateRole)
+			r.With(browserOnly).Put("/users/{id}/permissions", managedUsersHandler.UpdatePermissions)
+			r.With(browserOnly).Delete("/users/{id}", managedUsersHandler.Delete)
+			r.With(browserOnly).Put("/auth/change-password", authHandler.ChangePassword)
+			r.With(browserOnly).Get("/auth/switch-users", authHandler.ListSwitchUsers)
+			r.With(browserOnly).Post("/auth/switch-users", authHandler.AddSwitchUser)
 
 			// License API routes disabled — all themes are free in this fork.
 			// r.Route("/license", licenseHandler.Routes)
@@ -530,29 +550,30 @@ func (s *Server) Handler() (*chi.Mux, error) {
 			r.Get("/themes/custom", themesHandler.ListCustomThemes)
 
 			// Persisted theme selection (reads are public above)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageGlobalSettings)).
-				Put("/themes/settings", themesHandler.UpdateThemeSettings)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageGlobalSettings)).
-				Delete("/themes/settings", themesHandler.DeleteThemeSettings)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageGlobalSettings), settings.Write).Put("/themes/settings", themesHandler.UpdateThemeSettings)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageGlobalSettings), settings.Write).Delete("/themes/settings", themesHandler.DeleteThemeSettings)
 
 			// Persisted frontend user settings (opaque key-value map)
-			r.Get("/client-settings", clientSettingsHandler.GetClientSettings)
-			r.Put("/client-settings", clientSettingsHandler.UpdateClientSettings)
+			r.With(settings.Read).Get("/client-settings", clientSettingsHandler.GetClientSettings)
+			r.With(settings.Write).Put("/client-settings", clientSettingsHandler.UpdateClientSettings)
 
 			// Jackett routes (if configured)
 			if jackettHandler != nil {
-				jackettHandler.Routes(r.With(middleware.RequirePermission(s.authService, models.PermissionManageGlobalSettings)))
+				jackettHandler.Routes(r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageGlobalSettings)))
 			}
 
 			// API key management
 			r.Route("/api-keys", func(r chi.Router) {
+				r.Use(browserOnly)
 				r.Get("/", authHandler.ListAPIKeys)
 				r.Post("/", authHandler.CreateAPIKey)
+				r.Put("/{id}", authHandler.UpdateAPIKey)
 				r.Delete("/{id}", authHandler.DeleteAPIKey)
 			})
 
 			// Client API key management
 			r.Route("/client-api-keys", func(r chi.Router) {
+				r.Use(browserOnly)
 				r.Get("/", clientAPIKeysHandler.ListClientAPIKeys)
 				r.Post("/", clientAPIKeysHandler.CreateClientAPIKey)
 				r.Delete("/{id}", clientAPIKeysHandler.DeleteClientAPIKey)
@@ -560,193 +581,182 @@ func (s *Server) Handler() (*chi.Mux, error) {
 
 			// External programs management
 			r.Route("/external-programs", func(r chi.Router) {
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageExternalPrograms)).
-					Get("/", externalProgramsHandler.ListExternalPrograms)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionExecuteExternalPrograms)).
-					Get("/executable", externalProgramsHandler.ListExecutableExternalPrograms)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageExternalPrograms)).
-					Post("/", externalProgramsHandler.CreateExternalProgram)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageExternalPrograms)).
-					Put("/{id}", externalProgramsHandler.UpdateExternalProgram)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageExternalPrograms)).
-					Delete("/{id}", externalProgramsHandler.DeleteExternalProgram)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionExecuteExternalPrograms)).
-					Post("/execute", externalProgramsHandler.ExecuteExternalProgram)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageExternalPrograms), externalPrograms.Read).Get("/", externalProgramsHandler.ListExternalPrograms)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionExecuteExternalPrograms), externalPrograms.Run).Get("/executable", externalProgramsHandler.ListExecutableExternalPrograms)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageExternalPrograms), browserOnly).Post("/", externalProgramsHandler.CreateExternalProgram)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageExternalPrograms), browserOnly).Put("/{id}", externalProgramsHandler.UpdateExternalProgram)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageExternalPrograms), browserOnly).Delete("/{id}", externalProgramsHandler.DeleteExternalProgram)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionExecuteExternalPrograms), externalPrograms.Run).Post("/execute", externalProgramsHandler.ExecuteExternalProgram)
 			})
 
 			// Notification targets and events
 			r.Route("/notifications", func(r chi.Router) {
-				r.Use(middleware.RequirePermission(s.authService, models.PermissionManageNotifications))
-				r.Get("/events", notificationsHandler.ListEvents)
-				r.Get("/targets", notificationsHandler.ListTargets)
-				r.Post("/targets", notificationsHandler.CreateTarget)
-				r.Put("/targets/{id}", notificationsHandler.UpdateTarget)
-				r.Delete("/targets/{id}", notificationsHandler.DeleteTarget)
-				r.Post("/targets/{id}/test", notificationsHandler.TestTarget)
+				r.Use(middleware.RequireUserPermission(s.authService, models.PermissionManageNotifications))
+				r.With(notifications.Read).Get("/events", notificationsHandler.ListEvents)
+				r.With(notifications.Read).Get("/targets", notificationsHandler.ListTargets)
+				r.With(notifications.Write).Post("/targets", notificationsHandler.CreateTarget)
+				r.With(notifications.Write).Put("/targets/{id}", notificationsHandler.UpdateTarget)
+				r.With(notifications.Write).Delete("/targets/{id}", notificationsHandler.DeleteTarget)
+				r.With(notifications.Write).Post("/targets/{id}/test", notificationsHandler.TestTarget)
 			})
 
 			// ARR (Sonarr/Radarr) instance management
 			r.Route("/arr", func(r chi.Router) {
-				r.Use(middleware.RequirePermission(s.authService, models.PermissionManageARR))
-				r.Get("/instances", arrHandler.ListInstances)
-				r.Post("/instances", arrHandler.CreateInstance)
-				r.Get("/instances/{id}", arrHandler.GetInstance)
-				r.Put("/instances/{id}", arrHandler.UpdateInstance)
-				r.Delete("/instances/{id}", arrHandler.DeleteInstance)
-				r.Post("/instances/{id}/test", arrHandler.TestInstance)
-				r.Post("/test", arrHandler.TestConnection)
-				r.Post("/resolve", arrHandler.Resolve)
+				r.Use(middleware.RequireUserPermission(s.authService, models.PermissionManageARR))
+				r.With(arr.Read).Get("/instances", arrHandler.ListInstances)
+				r.With(arr.Write).Post("/instances", arrHandler.CreateInstance)
+				r.With(arr.Read).Get("/instances/{id}", arrHandler.GetInstance)
+				r.With(arr.Write).Put("/instances/{id}", arrHandler.UpdateInstance)
+				r.With(arr.Write).Delete("/instances/{id}", arrHandler.DeleteInstance)
+				r.With(arr.Write).Post("/instances/{id}/test", arrHandler.TestInstance)
+				r.With(arr.Write).Post("/test", arrHandler.TestConnection)
+				r.With(arr.Read).Post("/resolve", arrHandler.Resolve)
 			})
 
 			// Tracker customizations (nicknames and merged domains)
 			r.Route("/tracker-customizations", func(r chi.Router) {
-				r.Get("/", trackerCustomizationHandler.List)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageTrackerRules)).
-					Post("/", trackerCustomizationHandler.Create)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageTrackerRules)).
-					Put("/{id}", trackerCustomizationHandler.Update)
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageTrackerRules)).
-					Delete("/{id}", trackerCustomizationHandler.Delete)
+				r.With(settings.Read).Get("/", trackerCustomizationHandler.List)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageTrackerRules), settings.Write).Post("/", trackerCustomizationHandler.Create)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageTrackerRules), settings.Write).Put("/{id}", trackerCustomizationHandler.Update)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageTrackerRules), settings.Write).Delete("/{id}", trackerCustomizationHandler.Delete)
 			})
 
 			// Dashboard settings (per-user layout preferences)
-			r.Get("/dashboard-settings", dashboardSettingsHandler.Get)
-			r.Put("/dashboard-settings", dashboardSettingsHandler.Update)
+			r.With(settings.Read).Get("/dashboard-settings", dashboardSettingsHandler.Get)
+			r.With(settings.Write).Put("/dashboard-settings", dashboardSettingsHandler.Update)
 
 			// Saved filter views (named TorrentFilters snapshots)
 			r.Route("/filter-views", func(r chi.Router) {
-				r.Get("/", filterViewHandler.List)
-				r.Post("/", filterViewHandler.Create)
-				r.Put("/{id}", filterViewHandler.Update)
-				r.Delete("/{id}", filterViewHandler.Delete)
+				r.With(settings.Read).Get("/", filterViewHandler.List)
+				r.With(settings.Write).Post("/", filterViewHandler.Create)
+				r.With(settings.Write).Put("/{id}", filterViewHandler.Update)
+				r.With(settings.Write).Delete("/{id}", filterViewHandler.Delete)
 			})
 
 			// Log exclusions (muted log message patterns)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageLogs)).
-				Get("/log-exclusions", logExclusionsHandler.Get)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageLogs)).
-				Put("/log-exclusions", logExclusionsHandler.Update)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageLogs), logs.Read).Get("/log-exclusions", logExclusionsHandler.Get)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageLogs), logs.Write).Put("/log-exclusions", logExclusionsHandler.Update)
 
 			// Log settings and streaming
-			logsHandler.Routes(r.With(middleware.RequirePermission(s.authService, models.PermissionManageLogs)))
+			logsHandler.Routes(r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageLogs)))
 
 			// Version endpoints (current running version + update checks)
 			r.Get("/version", versionHandler.GetVersion)
 			r.Get("/version/latest", versionHandler.GetLatestVersion)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageUpdates)).
-				Post("/update/upload", updateHandler.UploadBinary)
-			r.Get("/application/info", applicationHandler.GetInfo)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageUpdates)).Post("/system/restart", systemHandler.Restart)
-			r.With(middleware.RequirePermission(s.authService, models.PermissionManageUpdates)).Post("/system/update", systemHandler.Update)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageUpdates), browserOnly).Post("/update/upload", updateHandler.UploadBinary)
+			r.With(system.Read).Get("/application/info", applicationHandler.GetInfo)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageUpdates), browserOnly).Post("/system/restart", systemHandler.Restart)
+			r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageUpdates), browserOnly).Post("/system/update", systemHandler.Update)
 
 			// Instance management
 			r.Route("/instances", func(r chi.Router) {
-				r.Get("/", instancesHandler.ListInstances)
-				r.Post("/", instancesHandler.CreateInstance)
-				r.Put("/order", instancesHandler.UpdateInstanceOrder)
-				r.Post("/shares/batch", instancesHandler.ShareInstances)
+				r.With(instances.Read).Get("/", instancesHandler.ListInstances)
+				r.With(instances.Write).Post("/", instancesHandler.CreateInstance)
+				r.With(allInstances, instances.Write).Put("/order", instancesHandler.UpdateInstanceOrder)
+				r.With(browserOnly).Post("/shares/batch", instancesHandler.ShareInstances)
 
 				r.Route("/{instanceID}", func(r chi.Router) {
-					r.Use(instancesHandler.RequireInstanceAccess)
-					r.With(instancesHandler.RequireInstanceOwner).Put("/status", instancesHandler.UpdateInstanceStatus)
-					r.With(instancesHandler.RequireInstanceOwner).Put("/", instancesHandler.UpdateInstance)
-					r.With(instancesHandler.RequireInstanceOwner).Delete("/", instancesHandler.DeleteInstance)
-					r.Post("/test", instancesHandler.TestConnection)
-					r.Get("/mediainfo", torrentsHandler.GetContentPathMediaInfo)
-					r.Get("/shares", instancesHandler.ListInstanceShares)
-					r.Post("/shares", instancesHandler.ShareInstance)
-					r.Delete("/shares/{userID}", instancesHandler.UnshareInstance)
+					r.Use(requireInstance)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Put("/status", instancesHandler.UpdateInstanceStatus)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Put("/", instancesHandler.UpdateInstance)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Delete("/", instancesHandler.DeleteInstance)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess).Post("/test", instancesHandler.TestConnection)
+					r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/mediainfo", torrentsHandler.GetContentPathMediaInfo)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess).Get("/shares", instancesHandler.ListInstanceShares)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess).Post("/shares", instancesHandler.ShareInstance)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess).Delete("/shares/{userID}", instancesHandler.UnshareInstance)
 
 					// SSH credentials and host-key pinning for remote filesystem access
-					r.With(instancesHandler.RequireInstanceOwner).Put("/ssh-credentials", instancesHandler.UpdateSSHCredentials)
-					r.With(instancesHandler.RequireInstanceOwner).Delete("/ssh-credentials", instancesHandler.DeleteSSHCredentials)
-					r.With(instancesHandler.RequireInstanceOwner).Post("/ssh-test", instancesHandler.TestSSHConnection)
-					r.With(instancesHandler.RequireInstanceOwner).Post("/ssh-host-key", instancesHandler.ConfirmSSHHostKey)
-					r.With(instancesHandler.RequireInstanceOwner).Post("/ssh-host-key/replace", instancesHandler.ReplaceSSHHostKey)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Put("/ssh-credentials", instancesHandler.UpdateSSHCredentials)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Delete("/ssh-credentials", instancesHandler.DeleteSSHCredentials)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Post("/ssh-test", instancesHandler.TestSSHConnection)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Post("/ssh-host-key", instancesHandler.ConfirmSSHHostKey)
+					r.With(browserOnly, instancesHandler.RequireInstanceAccess, instancesHandler.RequireInstanceOwner).Post("/ssh-host-key/replace", instancesHandler.ReplaceSSHHostKey)
 
 					// Torrent operations
 					r.Route("/torrents", func(r chi.Router) {
-						r.Get("/", torrentsHandler.ListTorrents)
-						r.Post("/", torrentsHandler.AddTorrent)
-						r.Post("/refresh", torrentsHandler.RefreshTorrents)
-						r.Post("/check-duplicates", torrentsHandler.CheckDuplicates)
-						r.Post("/bulk-action", torrentsHandler.BulkAction)
-						r.Post("/delete-cross-seeds", torrentsHandler.GetDeleteCrossSeeds)
-						r.Post("/add-peers", torrentsHandler.AddPeers)
-						r.Post("/ban-peers", torrentsHandler.BanPeers)
-						r.Post("/field", torrentsHandler.GetTorrentField)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/", torrentsHandler.ListTorrents)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/", torrentsHandler.AddTorrent)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Post("/refresh", torrentsHandler.RefreshTorrents)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Post("/check-duplicates", torrentsHandler.CheckDuplicates)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/bulk-action", torrentsHandler.BulkAction)
+						r.With(allInstances, torrents.Read, instancesHandler.RequireInstanceAccess).Post("/delete-cross-seeds", torrentsHandler.GetDeleteCrossSeeds)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/add-peers", torrentsHandler.AddPeers)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/ban-peers", torrentsHandler.BanPeers)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Post("/field", torrentsHandler.GetTorrentField)
 
 						r.Route("/{hash}", func(r chi.Router) {
 							// Torrent details
-							r.Get("/export", torrentsHandler.ExportTorrent)
-							r.Get("/properties", torrentsHandler.GetTorrentProperties)
-							r.Get("/trackers", torrentsHandler.GetTorrentTrackers)
-							r.Put("/trackers", torrentsHandler.EditTorrentTracker)
-							r.Post("/trackers", torrentsHandler.AddTorrentTrackers)
-							r.Delete("/trackers", torrentsHandler.RemoveTorrentTrackers)
-							r.Get("/peers", torrentsHandler.GetTorrentPeers)
-							r.Get("/webseeds", torrentsHandler.GetTorrentWebSeeds)
-							r.Get("/pieces", torrentsHandler.GetTorrentPieceStates)
-							r.Get("/files", torrentsHandler.GetTorrentFiles)
-							r.Put("/files", torrentsHandler.SetTorrentFilePriority)
-							r.Put("/rename", torrentsHandler.RenameTorrent)
-							r.Put("/rename-file", torrentsHandler.RenameTorrentFile)
-							r.Put("/rename-folder", torrentsHandler.RenameTorrentFolder)
-							r.Get("/files/{fileIndex}/mediainfo", torrentsHandler.GetTorrentFileMediaInfo)
-							r.Get("/disc-scans", discScanHandler.ListForTorrent)
-							r.Post("/disc-scans", discScanHandler.Start)
+							// A .torrent file holds the tracker passkey.
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Get("/export", torrentsHandler.ExportTorrent)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/properties", torrentsHandler.GetTorrentProperties)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/trackers", torrentsHandler.GetTorrentTrackers)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Put("/trackers", torrentsHandler.EditTorrentTracker)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/trackers", torrentsHandler.AddTorrentTrackers)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Delete("/trackers", torrentsHandler.RemoveTorrentTrackers)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/peers", torrentsHandler.GetTorrentPeers)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/webseeds", torrentsHandler.GetTorrentWebSeeds)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/pieces", torrentsHandler.GetTorrentPieceStates)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/files", torrentsHandler.GetTorrentFiles)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Put("/files", torrentsHandler.SetTorrentFilePriority)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Put("/rename", torrentsHandler.RenameTorrent)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Put("/rename-file", torrentsHandler.RenameTorrentFile)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Put("/rename-folder", torrentsHandler.RenameTorrentFolder)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/files/{fileIndex}/mediainfo", torrentsHandler.GetTorrentFileMediaInfo)
+							r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/disc-scans", discScanHandler.ListForTorrent)
+							r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/disc-scans", discScanHandler.Start)
 						})
 					})
 
 					r.Route("/disc-scans/{runID}", func(r chi.Router) {
-						r.Get("/", discScanHandler.Get)
-						r.Post("/cancel", discScanHandler.Cancel)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/", discScanHandler.Get)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/cancel", discScanHandler.Cancel)
 					})
 
-					r.Get("/capabilities", instancesHandler.GetInstanceCapabilities)
-					r.Get("/transfer-info", instancesHandler.GetTransferInfo)
-					r.Get("/reannounce/activity", instancesHandler.GetReannounceActivity)
-					r.Get("/reannounce/candidates", instancesHandler.GetReannounceCandidates)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/capabilities", instancesHandler.GetInstanceCapabilities)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/transfer-info", instancesHandler.GetTransferInfo)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/reannounce/activity", instancesHandler.GetReannounceActivity)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/reannounce/candidates", instancesHandler.GetReannounceCandidates)
 
 					// Torrent creator
 					r.Route("/torrent-creator", func(r chi.Router) {
-						r.Post("/", torrentsHandler.CreateTorrent)
-						r.Get("/status", torrentsHandler.GetTorrentCreationStatus)
-						r.Get("/count", torrentsHandler.GetActiveTaskCount)
-						r.Get("/{taskID}/file", torrentsHandler.DownloadTorrentCreationFile)
-						r.Delete("/{taskID}", torrentsHandler.DeleteTorrentCreationTask)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/", torrentsHandler.CreateTorrent)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/status", torrentsHandler.GetTorrentCreationStatus)
+						r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/count", torrentsHandler.GetActiveTaskCount)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Get("/{taskID}/file", torrentsHandler.DownloadTorrentCreationFile)
+						r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Delete("/{taskID}", torrentsHandler.DeleteTorrentCreationTask)
 					})
 
 					// Categories and tags
-					r.Get("/categories", torrentsHandler.GetCategories)
-					r.Post("/categories", torrentsHandler.CreateCategory)
-					r.Put("/categories", torrentsHandler.EditCategory)
-					r.Delete("/categories", torrentsHandler.RemoveCategories)
+					r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/categories", torrentsHandler.GetCategories)
+					r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/categories", torrentsHandler.CreateCategory)
+					r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Put("/categories", torrentsHandler.EditCategory)
+					r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Delete("/categories", torrentsHandler.RemoveCategories)
 
-					r.Get("/tags", torrentsHandler.GetTags)
-					r.Post("/tags", torrentsHandler.CreateTags)
-					r.Delete("/tags", torrentsHandler.DeleteTags)
+					r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/tags", torrentsHandler.GetTags)
+					r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Post("/tags", torrentsHandler.CreateTags)
+					r.With(torrents.Write, instancesHandler.RequireInstanceAccess).Delete("/tags", torrentsHandler.DeleteTags)
 
 					// Trackers
-					r.Get("/trackers", torrentsHandler.GetActiveTrackers)
+					r.With(torrents.Read, instancesHandler.RequireInstanceAccess).Get("/trackers", torrentsHandler.GetActiveTrackers)
 
 					// Automations
 					r.Route("/automations", func(r chi.Router) {
-						r.Get("/", automationsHandler.List)
-						r.Post("/", automationsHandler.Create)
-						r.Put("/order", automationsHandler.Reorder)
-						r.Post("/apply", automationsHandler.ApplyNow)
-						r.Post("/dry-run", automationsHandler.DryRunNow)
-						r.Post("/preview", automationsHandler.PreviewDeleteRule)
-						r.Post("/validate-regex", automationsHandler.ValidateRegex)
-						r.Get("/activity", automationsHandler.ListActivity)
-						r.Get("/activity/{activityId}", automationsHandler.GetActivityRun)
-						r.Delete("/activity", automationsHandler.DeleteActivity)
+						r.With(automations.Read, instancesHandler.RequireInstanceAccess).Get("/", automationsHandler.List)
+						r.With(automations.Write, instancesHandler.RequireInstanceAccess).Post("/", automationsHandler.Create)
+						r.With(automations.Write, instancesHandler.RequireInstanceAccess).Put("/order", automationsHandler.Reorder)
+						r.With(automations.Run, instancesHandler.RequireInstanceAccess).Post("/apply", automationsHandler.ApplyNow)
+						r.With(automations.Run, instancesHandler.RequireInstanceAccess).Post("/dry-run", automationsHandler.DryRunNow)
+						r.With(automations.Read, instancesHandler.RequireInstanceAccess).Post("/preview", automationsHandler.PreviewDeleteRule)
+						r.With(automations.Read, instancesHandler.RequireInstanceAccess).Post("/validate-regex", automationsHandler.ValidateRegex)
+						r.With(automations.Read, instancesHandler.RequireInstanceAccess).Get("/activity", automationsHandler.ListActivity)
+						r.With(automations.Read, instancesHandler.RequireInstanceAccess).Get("/activity/{activityId}", automationsHandler.GetActivityRun)
+						r.With(automations.Write, instancesHandler.RequireInstanceAccess).Delete("/activity", automationsHandler.DeleteActivity)
 
 						r.Route("/{ruleID}", func(r chi.Router) {
-							r.Put("/", automationsHandler.Update)
-							r.Delete("/", automationsHandler.Delete)
-							r.Post("/apply", automationsHandler.ApplyRuleNow)
+							r.With(automations.Write, instancesHandler.RequireInstanceAccess).Put("/", automationsHandler.Update)
+							r.With(automations.Write, instancesHandler.RequireInstanceAccess).Delete("/", automationsHandler.Delete)
+							r.With(automations.Run, instancesHandler.RequireInstanceAccess).Post("/apply", automationsHandler.ApplyRuleNow)
 						})
 					})
 
@@ -756,51 +766,52 @@ func (s *Server) Handler() (*chi.Mux, error) {
 					})
 
 					// Preferences
-					r.Get("/preferences", preferencesHandler.GetPreferences)
-					r.Patch("/preferences", preferencesHandler.UpdatePreferences)
-					r.Post("/preferences/test-email", preferencesHandler.SendTestEmail)
-					r.Get("/network-binding", preferencesHandler.GetNetworkBinding)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/preferences", preferencesHandler.GetPreferences)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess).Patch("/preferences", preferencesHandler.UpdatePreferences)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess).Post("/preferences/test-email", preferencesHandler.SendTestEmail)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/network-binding", preferencesHandler.GetNetworkBinding)
 
 					// Transmission daemon session settings
-					r.Get("/transmission-preferences", preferencesHandler.GetTransmissionPreferences)
-					r.Patch("/transmission-preferences", preferencesHandler.UpdateTransmissionPreferences)
-					r.Post("/transmission-preferences/blocklist-update", preferencesHandler.UpdateTransmissionBlocklist)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/transmission-preferences", preferencesHandler.GetTransmissionPreferences)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess).Patch("/transmission-preferences", preferencesHandler.UpdateTransmissionPreferences)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess).Post("/transmission-preferences/blocklist-update", preferencesHandler.UpdateTransmissionBlocklist)
 
 					// Alternative speed limits
-					r.Get("/alternative-speed-limits", preferencesHandler.GetAlternativeSpeedLimitsMode)
-					r.Post("/alternative-speed-limits/toggle", preferencesHandler.ToggleAlternativeSpeedLimits)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/alternative-speed-limits", preferencesHandler.GetAlternativeSpeedLimitsMode)
+					r.With(instances.Write, instancesHandler.RequireInstanceAccess).Post("/alternative-speed-limits/toggle", preferencesHandler.ToggleAlternativeSpeedLimits)
 
 					// qBittorrent application info
-					r.Get("/app-info", qbittorrentInfoHandler.GetQBittorrentAppInfo)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/app-info", qbittorrentInfoHandler.GetQBittorrentAppInfo)
 
 					// Path autocomplete
-					r.Get("/getDirectoryContent", torrentsHandler.GetDirectoryContent)
+					r.With(instances.Read, instancesHandler.RequireInstanceAccess).Get("/getDirectoryContent", torrentsHandler.GetDirectoryContent)
 
+					// A backup holds .torrent files, and each one holds the tracker passkey.
 					r.Route("/backups", func(r chi.Router) {
-						r.Get("/settings", backupsHandler.GetSettings)
-						r.Put("/settings", backupsHandler.UpdateSettings)
-						r.Post("/import", backupsHandler.ImportManifest)
-						r.Post("/run", backupsHandler.TriggerBackup)
-						r.Get("/runs", backupsHandler.ListRuns)
-						r.Delete("/runs", backupsHandler.DeleteAllRuns)
-						r.Get("/runs/{runID}/manifest", backupsHandler.GetManifest)
-						r.Get("/runs/{runID}/download", backupsHandler.DownloadRun)
-						r.Post("/runs/{runID}/restore/preview", backupsHandler.PreviewRestore)
-						r.Post("/runs/{runID}/restore", backupsHandler.ExecuteRestore)
-						r.Get("/runs/{runID}/items/{torrentHash}/download", backupsHandler.DownloadTorrentBlob)
-						r.Delete("/runs/{runID}", backupsHandler.DeleteRun)
+						r.With(backups.Read, instancesHandler.RequireInstanceAccess).Get("/settings", backupsHandler.GetSettings)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Put("/settings", backupsHandler.UpdateSettings)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Post("/import", backupsHandler.ImportManifest)
+						r.With(backups.Run, instancesHandler.RequireInstanceAccess).Post("/run", backupsHandler.TriggerBackup)
+						r.With(backups.Read, instancesHandler.RequireInstanceAccess).Get("/runs", backupsHandler.ListRuns)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Delete("/runs", backupsHandler.DeleteAllRuns)
+						r.With(backups.Read, instancesHandler.RequireInstanceAccess).Get("/runs/{runID}/manifest", backupsHandler.GetManifest)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Get("/runs/{runID}/download", backupsHandler.DownloadRun)
+						r.With(backups.Read, instancesHandler.RequireInstanceAccess).Post("/runs/{runID}/restore/preview", backupsHandler.PreviewRestore)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Post("/runs/{runID}/restore", backupsHandler.ExecuteRestore)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Get("/runs/{runID}/items/{torrentHash}/download", backupsHandler.DownloadTorrentBlob)
+						r.With(backups.Write, instancesHandler.RequireInstanceAccess).Delete("/runs/{runID}", backupsHandler.DeleteRun)
 					})
 
 					// Orphan file scanning
 					r.Route("/orphan-scan", func(r chi.Router) {
-						r.Get("/settings", orphanScanHandler.GetSettings)
-						r.Put("/settings", orphanScanHandler.UpdateSettings)
-						r.Post("/scan", orphanScanHandler.TriggerScan)
-						r.Get("/runs", orphanScanHandler.ListRuns)
+						r.With(orphanScan.Read, instancesHandler.RequireInstanceAccess).Get("/settings", orphanScanHandler.GetSettings)
+						r.With(orphanScan.Write, instancesHandler.RequireInstanceAccess).Put("/settings", orphanScanHandler.UpdateSettings)
+						r.With(orphanScan.Run, instancesHandler.RequireInstanceAccess).Post("/scan", orphanScanHandler.TriggerScan)
+						r.With(orphanScan.Read, instancesHandler.RequireInstanceAccess).Get("/runs", orphanScanHandler.ListRuns)
 						r.Route("/runs/{runID}", func(r chi.Router) {
-							r.Get("/", orphanScanHandler.GetRun)
-							r.Post("/confirm", orphanScanHandler.ConfirmDeletion)
-							r.Delete("/", orphanScanHandler.CancelRun)
+							r.With(orphanScan.Read, instancesHandler.RequireInstanceAccess).Get("/", orphanScanHandler.GetRun)
+							r.With(orphanScan.Write, instancesHandler.RequireInstanceAccess).Post("/confirm", orphanScanHandler.ConfirmDeletion)
+							r.With(orphanScan.Run, instancesHandler.RequireInstanceAccess).Delete("/", orphanScanHandler.CancelRun)
 						})
 					})
 				})
@@ -808,24 +819,24 @@ func (s *Server) Handler() (*chi.Mux, error) {
 
 			// Directory scanner (global, not per-instance)
 			if dirScanHandler != nil {
-				r.With(middleware.RequirePermission(s.authService, models.PermissionManageGlobalSettings)).Route("/dir-scan", func(r chi.Router) {
-					r.Get("/settings", dirScanHandler.GetSettings)
-					r.Patch("/settings", dirScanHandler.UpdateSettings)
+				r.With(middleware.RequireUserPermission(s.authService, models.PermissionManageGlobalSettings), allInstances).Route("/dir-scan", func(r chi.Router) {
+					r.With(dirScan.Read).Get("/settings", dirScanHandler.GetSettings)
+					r.With(dirScan.Write).Patch("/settings", dirScanHandler.UpdateSettings)
 					r.Route("/directories", func(r chi.Router) {
-						r.Get("/", dirScanHandler.ListDirectories)
-						r.Post("/", dirScanHandler.CreateDirectory)
+						r.With(dirScan.Read).Get("/", dirScanHandler.ListDirectories)
+						r.With(dirScan.Write).Post("/", dirScanHandler.CreateDirectory)
 						r.Route("/{directoryID}", func(r chi.Router) {
-							r.Get("/", dirScanHandler.GetDirectory)
-							r.Patch("/", dirScanHandler.UpdateDirectory)
-							r.Delete("/", dirScanHandler.DeleteDirectory)
-							r.Post("/reset-files", dirScanHandler.ResetFiles)
-							r.Post("/requeue-no-match", dirScanHandler.RequeueNoMatch)
-							r.Post("/scan", dirScanHandler.TriggerScan)
-							r.Delete("/scan", dirScanHandler.CancelScan)
-							r.Get("/status", dirScanHandler.GetStatus)
-							r.Get("/runs", dirScanHandler.ListRuns)
-							r.Get("/runs/{runID}/injections", dirScanHandler.ListRunInjections)
-							r.Get("/files", dirScanHandler.ListFiles)
+							r.With(dirScan.Read).Get("/", dirScanHandler.GetDirectory)
+							r.With(dirScan.Write).Patch("/", dirScanHandler.UpdateDirectory)
+							r.With(dirScan.Write).Delete("/", dirScanHandler.DeleteDirectory)
+							r.With(dirScan.Write).Post("/reset-files", dirScanHandler.ResetFiles)
+							r.With(dirScan.Write).Post("/requeue-no-match", dirScanHandler.RequeueNoMatch)
+							r.With(dirScan.Run).Post("/scan", dirScanHandler.TriggerScan)
+							r.With(dirScan.Run).Delete("/scan", dirScanHandler.CancelScan)
+							r.With(dirScan.Read).Get("/status", dirScanHandler.GetStatus)
+							r.With(dirScan.Read).Get("/runs", dirScanHandler.ListRuns)
+							r.With(dirScan.Read).Get("/runs/{runID}/injections", dirScanHandler.ListRunInjections)
+							r.With(dirScan.Read).Get("/files", dirScanHandler.ListFiles)
 						})
 					})
 				})
@@ -833,8 +844,8 @@ func (s *Server) Handler() (*chi.Mux, error) {
 
 			// Global torrent operations (cross-instance)
 			r.Route("/torrents", func(r chi.Router) {
-				r.Get("/cross-instance", torrentsHandler.ListCrossInstanceTorrents)
-				r.Post("/export", torrentsHandler.ExportTorrentArchive)
+				r.With(allInstances, torrents.Read).Get("/cross-instance", torrentsHandler.ListCrossInstanceTorrents)
+				r.With(allInstances, torrents.Write).Post("/export", torrentsHandler.ExportTorrentArchive)
 			})
 		})
 	})

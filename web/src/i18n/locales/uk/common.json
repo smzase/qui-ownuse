@@ -174,11 +174,10 @@
     "dark": "Темна",
     "system": "Системна",
     "theme": "Тема",
-    "premium": "Преміум",
     "switchedToMode": "Перемкнуто на {{mode}} режим",
     "switchedToTheme": "Перемкнуто на тему {{theme}}",
     "switchedToThemeVariation": "Перемкнуто на тему {{theme}} ({{variation}})",
-    "premiumThemeError": "Це преміум тема. Відкрийте Налаштування → Теми для активації ліцензії."
+    "premiumThemeError": "Ця тема потребує ліцензії. Відкрийте Налаштування → Теми для активації ліцензії."
   },
   "updateBanner": {
     "updateAvailable": "Доступне оновлення",

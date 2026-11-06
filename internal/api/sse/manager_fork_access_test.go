@@ -18,7 +18,7 @@ import (
 func TestSubscriptionChangesKeepConnectionOwnership(t *testing.T) {
 	manager := NewStreamManager(nil, nil, nil, nil)
 	t.Cleanup(func() { _ = manager.Shutdown(t.Context()) })
-	conn := manager.openConnection(false, 1)
+	conn := manager.openConnection(false, 1, 0)
 	conn.markReady()
 	conn.subs["existing"] = &subscriptionState{clientKey: "list"}
 	for _, userID := range []int{2, 1} {

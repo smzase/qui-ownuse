@@ -23,7 +23,7 @@ If you have one server, run qui on that server. Some seedbox providers install q
 - **Multi-Instance Support**: Manage all your qBittorrent instances from one place
 - **Transmission Support**: Manage [Transmission daemons](./features/transmission.md) alongside qBittorrent with the same torrent management surface
 - **Large Collections**: Handles thousands of torrents
-- **Themeable**: Multiple built-in color themes, plus sideloadable [custom themes](./features/custom-themes.md) (premium), with a shared collection in [qui-community-themes](https://github.com/autobrr/qui-community-themes)
+- **Themeable**: Multiple built-in color themes, including the themes from [qui-community-themes](https://github.com/autobrr/qui-community-themes) (license required), plus sideloadable [custom themes](./features/custom-themes.md) (license required)
 - **Base URL Support**: Serve from a subdirectory (for example `/qui/`) behind a reverse proxy
 - **OIDC Single Sign-On**: Authenticate through your [OpenID Connect provider](./configuration/oidc.md)
 - **External Programs**: Launch [custom scripts](./features/external-programs.md) from the torrent context menu

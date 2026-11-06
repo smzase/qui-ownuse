@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/autobrr/qui/internal/api/ctxkeys"
+	"github.com/autobrr/qui/internal/api/middleware"
 	"github.com/autobrr/qui/internal/models"
 	"github.com/autobrr/qui/internal/qbittorrent"
 	"github.com/autobrr/qui/internal/services/externalprograms"
@@ -290,6 +291,9 @@ func (h *ExternalProgramsHandler) ExecuteExternalProgram(w http.ResponseWriter, 
 
 	if req.InstanceID == 0 {
 		http.Error(w, "Instance ID is required", http.StatusBadRequest)
+		return
+	}
+	if !middleware.CanReachInstance(w, r, req.InstanceID) {
 		return
 	}
 

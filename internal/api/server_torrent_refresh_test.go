@@ -32,7 +32,7 @@ func TestTorrentRefreshRequiresInstanceAccess(t *testing.T) {
 	instance, err := deps.InstanceStore.Create(t.Context(), models.ClientTypeTransmission, "Refresh fixture", "http://127.0.0.1:1", "", "", nil, nil, false, nil)
 	require.NoError(t, err)
 	require.NoError(t, deps.InstanceStore.SetOwner(t.Context(), instance.ID, owner.ID))
-	key, _, err := deps.AuthService.CreateAPIKeyForUser(t.Context(), other.ID, "refresh fixture")
+	key, _, err := deps.AuthService.CreateAPIKeyForUser(t.Context(), other.ID, "refresh fixture", models.AllPermissions(), nil)
 	require.NoError(t, err)
 	router, err := NewServer(deps).Handler()
 	require.NoError(t, err)

@@ -13,7 +13,7 @@
     "externalPrograms": "Externe Programme",
     "notifications": "Benachrichtigungen",
     "dateTime": "Zeit & Sprache",
-    "premiumThemes": "Premium-Designs",
+    "premiumThemes": "Designs",
     "security": "Sicherheit",
     "logs": "Protokolle"
   },
@@ -464,17 +464,17 @@
     "selector": {
       "title": "Design-Auswahl",
       "loadingDescription": "Verfügbare Designs werden geladen...",
-      "description": "Wähle aus den verfügbaren Designs. Premium-Designs erfordern eine gültige Lizenz.",
-      "verificationUnavailable": "Lizenzprüfung nicht verfügbar. Der Wechsel zu Premium-Designs ist vorübergehend deaktiviert.",
-      "premium": "Premium",
-      "pro": "Pro",
+      "description": "Wähle aus den verfügbaren Designs. Einige Designs erfordern eine gültige Lizenz.",
+      "verificationUnavailable": "Lizenzprüfung nicht verfügbar. Der Wechsel zu lizenzierten Designs ist vorübergehend deaktiviert.",
       "free": "Kostenlos",
       "locked": "Gesperrt",
-      "lock": "Sperren"
+      "lock": "Sperren",
+      "showTheme": "Anzeigen",
+      "hideTheme": "Ausblenden"
     },
     "toasts": {
-      "premiumRequired": "Premium-Lizenz erforderlich",
-      "premiumRequiredDescription": "Schalte Premium-Designs frei, indem du eine gültige Premium-Lizenz hinzufügst."
+      "premiumRequired": "Lizenz erforderlich",
+      "premiumRequiredDescription": "Füge eine gültige Lizenz hinzu, um alle Designs freizuschalten."
     },
     "license": {
       "errors": {
@@ -496,9 +496,9 @@
     "custom": {
       "badge": "Eigene",
       "title": "Eigene Themes",
-      "lockedTitle": "Eigene Themes sind eine Premium-Funktion",
-      "lockedDescription": "Schalte Premium frei, um eigene Theme-CSS-Dateien aus einem Verzeichnis auf der Festplatte zu laden.",
-      "unlockCta": "Premium freischalten",
+      "lockedTitle": "Eigene Themes erfordern eine Lizenz",
+      "lockedDescription": "Hol dir eine Lizenz, um eigene Theme-CSS-Dateien aus einem Verzeichnis auf der Festplatte zu laden.",
+      "unlockCta": "Lizenz holen",
       "refresh": "Aktualisieren",
       "detectedCount": "Gefundene Themes: {{total}}",
       "parseErrorsTitle": "Diese Dateien konnten nicht gelesen werden:",

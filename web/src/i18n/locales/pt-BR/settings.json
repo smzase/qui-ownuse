@@ -13,7 +13,7 @@
     "externalPrograms": "Programas Externos",
     "notifications": "Notificações",
     "dateTime": "Data e Hora",
-    "premiumThemes": "Temas Premium",
+    "premiumThemes": "Temas",
     "security": "Segurança",
     "logs": "Logs"
   },
@@ -464,17 +464,17 @@
     "selector": {
       "title": "Seleção de Tema",
       "loadingDescription": "Carregando temas disponíveis...",
-      "description": "Escolha entre os temas disponíveis. Temas premium requerem uma licença válida.",
-      "verificationUnavailable": "Verificação de licença indisponível. A troca de tema premium está temporariamente desativada.",
-      "premium": "Premium",
-      "pro": "Pro",
+      "description": "Escolha entre os temas disponíveis. Alguns temas requerem uma licença válida.",
+      "verificationUnavailable": "Verificação de licença indisponível. A troca para um tema licenciado está temporariamente desativada.",
       "free": "Grátis",
       "locked": "Bloqueado",
-      "lock": "Bloquear"
+      "lock": "Bloquear",
+      "showTheme": "Mostrar",
+      "hideTheme": "Ocultar"
     },
     "toasts": {
-      "premiumRequired": "Licença Premium necessária",
-      "premiumRequiredDescription": "Desbloqueie temas premium adicionando uma licença premium válida."
+      "premiumRequired": "Licença necessária",
+      "premiumRequiredDescription": "Adicione uma licença válida para desbloquear todos os temas."
     },
     "license": {
       "errors": {
@@ -496,9 +496,9 @@
     "custom": {
       "badge": "Personalizado",
       "title": "Temas Personalizados",
-      "lockedTitle": "Temas personalizados são um recurso premium",
-      "lockedDescription": "Desbloqueie o premium para fazer o sideload de seus próprios arquivos CSS de tema de um diretório no disco.",
-      "unlockCta": "Desbloquear premium",
+      "lockedTitle": "Temas personalizados precisam de uma licença",
+      "lockedDescription": "Obtenha uma licença para fazer o sideload de seus próprios arquivos CSS de tema de um diretório no disco.",
+      "unlockCta": "Obter uma licença",
       "refresh": "Atualizar",
       "detectedCount": "Temas encontrados: {{total}}",
       "parseErrorsTitle": "Não foi possível analisar estes arquivos:",

@@ -27,7 +27,6 @@ import (
 	"maps"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -116,6 +115,10 @@ func lint() (counts, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseLint(raw)
+}
+
+func parseLint(raw []byte) (counts, error) {
 	var report struct {
 		Issues []struct {
 			FromLinter string
@@ -130,7 +133,9 @@ func lint() (counts, error) {
 		if got[issue.FromLinter] == nil {
 			got[issue.FromLinter] = map[string]int{}
 		}
-		got[issue.FromLinter][filepath.ToSlash(issue.Pos.Filename)]++
+		// The allowlist uses slash paths, including on Windows.
+		filename := strings.ReplaceAll(issue.Pos.Filename, `\`, "/")
+		got[issue.FromLinter][filename]++
 	}
 	return got, nil
 }

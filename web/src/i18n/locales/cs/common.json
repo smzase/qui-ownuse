@@ -174,11 +174,10 @@
     "dark": "Tmavý",
     "system": "Systém",
     "theme": "Vzhled",
-    "premium": "Premiové",
     "switchedToMode": "Přepnuto na {{mode}} režim",
     "switchedToTheme": "Přepnuto na {{theme}} vzhled",
     "switchedToThemeVariation": "Přepnuto na {{theme}} vzhled ({{variation}})",
-    "premiumThemeError": "Tento vzhled je premiový. Otevřete Nastavení → Vzhledy pro aktivaci licence."
+    "premiumThemeError": "Tento vzhled vyžaduje licenci. Otevřete Nastavení → Motivy pro aktivaci licence."
   },
   "updateBanner": {
     "updateAvailable": "Aktualizace dostupná",

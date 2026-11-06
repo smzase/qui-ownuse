@@ -13,7 +13,7 @@
     "externalPrograms": "外部程式",
     "notifications": "通知",
     "dateTime": "時間與語言",
-    "premiumThemes": "進階主題",
+    "premiumThemes": "主題",
     "security": "安全",
     "logs": "日誌"
   },
@@ -462,17 +462,17 @@
     "selector": {
       "title": "主題選擇",
       "loadingDescription": "正在載入可用主題...",
-      "description": "從可用主題中選擇。進階主題需要有效的授權。",
-      "verificationUnavailable": "授權驗證不可用。進階主題切換暫時停用。",
-      "premium": "進階",
-      "pro": "Pro",
+      "description": "從可用主題中選擇。部分主題需要有效的授權。",
+      "verificationUnavailable": "授權驗證不可用。切換到需要授權的主題暫時停用。",
       "free": "免費",
       "locked": "已鎖定",
-      "lock": "鎖定"
+      "lock": "鎖定",
+      "showTheme": "顯示",
+      "hideTheme": "隱藏"
     },
     "toasts": {
-      "premiumRequired": "需要進階授權",
-      "premiumRequiredDescription": "新增有效的進階授權以解鎖進階主題。"
+      "premiumRequired": "需要授權",
+      "premiumRequiredDescription": "新增有效的授權以解鎖所有主題。"
     },
     "license": {
       "errors": {
@@ -494,9 +494,9 @@
     "custom": {
       "badge": "自訂",
       "title": "自訂主題",
-      "lockedTitle": "自訂主題是進階功能",
-      "lockedDescription": "解鎖進階版即可從磁碟目錄載入您自己的主題 CSS 檔案。",
-      "unlockCta": "解鎖進階版",
+      "lockedTitle": "自訂主題需要授權",
+      "lockedDescription": "取得授權即可從磁碟目錄載入您自己的主題 CSS 檔案。",
+      "unlockCta": "取得授權",
       "refresh": "重新整理",
       "detectedCount": "找到的主題：{{total}}",
       "parseErrorsTitle": "無法解析以下檔案：",

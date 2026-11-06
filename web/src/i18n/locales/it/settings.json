@@ -13,7 +13,7 @@
     "externalPrograms": "Programmi esterni",
     "notifications": "Notifiche",
     "dateTime": "Ora e lingua",
-    "premiumThemes": "Temi premium",
+    "premiumThemes": "Temi",
     "security": "Sicurezza",
     "logs": "Log"
   },
@@ -464,17 +464,17 @@
     "selector": {
       "title": "Selezione del tema",
       "loadingDescription": "Caricamento dei temi disponibili...",
-      "description": "Scegli tra i temi disponibili. I temi premium richiedono una licenza valida.",
-      "verificationUnavailable": "Verifica della licenza non disponibile. Il cambio dei temi premium è temporaneamente disabilitato.",
-      "premium": "Premium",
-      "pro": "Pro",
+      "description": "Scegli tra i temi disponibili. Alcuni temi richiedono una licenza valida.",
+      "verificationUnavailable": "Verifica della licenza non disponibile. Il passaggio a un tema con licenza è temporaneamente disabilitato.",
       "free": "Gratuito",
       "locked": "Bloccato",
-      "lock": "Blocca"
+      "lock": "Blocca",
+      "showTheme": "Mostra",
+      "hideTheme": "Nascondi"
     },
     "toasts": {
-      "premiumRequired": "Licenza Premium richiesta",
-      "premiumRequiredDescription": "Sblocca i temi premium aggiungendo una licenza premium valida."
+      "premiumRequired": "Licenza richiesta",
+      "premiumRequiredDescription": "Aggiungi una licenza valida per sbloccare tutti i temi."
     },
     "license": {
       "errors": {
@@ -496,9 +496,9 @@
     "custom": {
       "badge": "Personalizzato",
       "title": "Temi personalizzati",
-      "lockedTitle": "I temi personalizzati sono una funzione premium",
-      "lockedDescription": "Sblocca il premium per caricare i tuoi file CSS dei temi da una cartella sul disco.",
-      "unlockCta": "Sblocca premium",
+      "lockedTitle": "I temi personalizzati richiedono una licenza",
+      "lockedDescription": "Ottieni una licenza per caricare i tuoi file CSS dei temi da una cartella sul disco.",
+      "unlockCta": "Ottieni una licenza",
       "refresh": "Aggiorna",
       "detectedCount": "Temi trovati: {{total}}",
       "parseErrorsTitle": "Impossibile analizzare questi file:",

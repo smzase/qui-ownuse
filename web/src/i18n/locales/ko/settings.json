@@ -13,7 +13,7 @@
     "externalPrograms": "외부 프로그램",
     "notifications": "알림",
     "dateTime": "시간 및 언어",
-    "premiumThemes": "프리미엄 테마",
+    "premiumThemes": "테마",
     "security": "보안",
     "logs": "로그"
   },
@@ -462,17 +462,17 @@
     "selector": {
       "title": "테마 선택",
       "loadingDescription": "사용 가능한 테마 불러오는 중...",
-      "description": "사용 가능한 테마 중에서 선택하세요. 프리미엄 테마에는 유효한 라이선스가 필요합니다.",
-      "verificationUnavailable": "라이선스 확인을 사용할 수 없습니다. 프리미엄 테마 전환이 일시적으로 비활성화되었습니다.",
-      "premium": "프리미엄",
-      "pro": "Pro",
+      "description": "사용 가능한 테마 중에서 선택하세요. 일부 테마에는 유효한 라이선스가 필요합니다.",
+      "verificationUnavailable": "라이선스 확인을 사용할 수 없습니다. 라이선스 테마로의 전환이 일시적으로 비활성화되었습니다.",
       "free": "무료",
       "locked": "잠김",
-      "lock": "잠금"
+      "lock": "잠금",
+      "showTheme": "표시",
+      "hideTheme": "숨기기"
     },
     "toasts": {
-      "premiumRequired": "프리미엄 라이선스가 필요합니다",
-      "premiumRequiredDescription": "유효한 프리미엄 라이선스를 추가하여 프리미엄 테마를 잠금 해제하세요."
+      "premiumRequired": "라이선스가 필요합니다",
+      "premiumRequiredDescription": "유효한 라이선스를 추가하여 모든 테마를 잠금 해제하세요."
     },
     "license": {
       "errors": {
@@ -494,9 +494,9 @@
     "custom": {
       "badge": "사용자 지정",
       "title": "사용자 지정 테마",
-      "lockedTitle": "사용자 지정 테마는 프리미엄 기능입니다",
-      "lockedDescription": "프리미엄을 잠금 해제하면 디스크의 디렉터리에서 직접 만든 테마 CSS 파일을 불러올 수 있습니다.",
-      "unlockCta": "프리미엄 잠금 해제",
+      "lockedTitle": "사용자 지정 테마에는 라이선스가 필요합니다",
+      "lockedDescription": "라이선스를 받으면 디스크의 디렉터리에서 직접 만든 테마 CSS 파일을 불러올 수 있습니다.",
+      "unlockCta": "라이선스 받기",
       "refresh": "새로 고침",
       "detectedCount": "찾은 테마: {{total}}개",
       "parseErrorsTitle": "다음 파일을 분석할 수 없습니다:",

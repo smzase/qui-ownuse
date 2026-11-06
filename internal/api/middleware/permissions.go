@@ -11,7 +11,7 @@ import (
 	"github.com/autobrr/qui/internal/models"
 )
 
-func RequirePermission(authService *auth.Service, permission models.UserPermission) func(http.Handler) http.Handler {
+func RequireUserPermission(authService *auth.Service, permission models.UserPermission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			role, _ := r.Context().Value(ctxkeys.UserRole).(string)

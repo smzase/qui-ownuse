@@ -40,7 +40,7 @@ import { buildTrackerCustomizationLookup, extractTrackerHost, getTrackerCustomiz
 import { resolveTrackerHealthSupport } from "@/lib/tracker-health-support"
 import { resolveTrackerIconSrc } from "@/lib/tracker-icons"
 import { resolveTorrentTargetCapabilities } from "@/lib/instance-capabilities"
-import { actionTargetRequest, buildActionTarget, getSelectionIdentity as selectionIdentity, hasSelection, rememberTickedTorrents, selectAllButtonEvent, type ActionTargetScope } from "@/lib/torrent-selection"
+import { actionTargetInstanceIds, actionTargetRequest, buildActionTarget, getSelectionIdentity as selectionIdentity, hasSelection, rememberTickedTorrents, selectAllButtonEvent, type ActionTargetScope } from "@/lib/torrent-selection"
 import { getCommonCategory, getCommonSavePath, getToggleSelectionState, getTotalSize } from "@/lib/torrent-utils"
 import { isAllInstancesScope } from "@/lib/instances"
 import { useNavigate, useSearch } from "@tanstack/react-router"
@@ -97,7 +97,7 @@ import {
 // Columns dropdown removed on mobile
 import { useTorrentSelectionContext } from "@/contexts/TorrentSelectionContext"
 import { useCrossSeedFilter } from "@/hooks/useCrossSeedFilter"
-import { useInstanceCapabilities } from "@/hooks/useInstanceCapabilities"
+import { useInstanceCapabilities, useInstancesSupport } from "@/hooks/useInstanceCapabilities"
 import { useInstances } from "@/hooks/useInstances"
 import { useInstanceMetadata } from "@/hooks/useInstanceMetadata.ts"
 import { usePersistedCompactViewState, type ViewMode } from "@/hooks/usePersistedCompactViewState"
@@ -937,6 +937,8 @@ export function TorrentCardsMobile({
     return buildActionTarget(selection, scope, { loaded: torrents, ticked, totalCount })
   }, [selection, selectedHashes, torrents, getSelectionIdentity, instanceId, instanceIds, filters, effectiveSearch, isCrossInstanceEndpoint, totalCount])
   const { count: effectiveSelectionCount, previewTorrents: selectedTorrents } = actionTarget
+  const actionInstanceIds = useMemo(() => actionTargetInstanceIds(actionTarget, instanceId), [actionTarget, instanceId])
+  const supportsTorrentExport = useInstancesSupport(actionInstanceIds, "supportsTorrentExport")
 
   const selectionBarVisible = selectionMode && effectiveSelectionCount > 0
 
@@ -976,8 +978,6 @@ export function TorrentCardsMobile({
     instances,
   }), [selectedTorrents, instanceId, instanceIds, isAllSelected, isAllInstancesView, instances])
   const supportsQbittorrentOnlyActions = targetCapabilities.supportsQbittorrentOnlyActions
-  const supportsShareLimitAction = supportsQbittorrentOnlyActions && (capabilities?.supportsShareLimitsAction ?? false)
-  const supportsShareLimitsMode = supportsQbittorrentOnlyActions && (capabilities?.supportsShareLimitsMode ?? false)
 
   useEffect(() => {
     if (!supportsQbittorrentOnlyActions) {
@@ -1654,7 +1654,7 @@ export function TorrentCardsMobile({
               <FolderOpen className="mr-2 h-4 w-4" />
               {t("managementBar.setLocation")}
             </Button>
-            {supportsQbittorrentOnlyActions && (capabilities?.supportsTorrentExport ?? true) && (
+            {supportsTorrentExport && (
               <Button
                 variant="outline"
                 onClick={handleExport}
@@ -1737,9 +1737,8 @@ export function TorrentCardsMobile({
         onOpenChange={setShowShareLimitDialog}
         hashCount={effectiveSelectionCount}
         torrents={selectedTorrents}
-        supportsShareLimitsAction={supportsShareLimitAction}
-        supportsShareLimitsMode={supportsShareLimitsMode}
         supportsSeedingTimeLimit={supportsQbittorrentOnlyActions}
+        instanceIds={actionInstanceIds}
         onConfirm={handleSetShareLimitWrapper}
         isPending={isPending}
       />

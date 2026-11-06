@@ -13,7 +13,7 @@
     "externalPrograms": "External Programs",
     "notifications": "Notifications",
     "dateTime": "Time & Language",
-    "premiumThemes": "Premium Themes",
+    "premiumThemes": "Themes",
     "security": "Security",
     "logs": "Logs"
   },
@@ -464,17 +464,17 @@
     "selector": {
       "title": "Theme Selection",
       "loadingDescription": "Loading available themes...",
-      "description": "Choose from available themes. Premium themes require a valid license.",
-      "verificationUnavailable": "License verification unavailable. Premium theme switching is temporarily disabled.",
-      "premium": "Premium",
-      "pro": "Pro",
+      "description": "Choose from available themes. Some themes need a valid license.",
+      "verificationUnavailable": "License verification unavailable. Switching to a licensed theme is temporarily disabled.",
       "free": "Free",
       "locked": "Locked",
-      "lock": "Lock"
+      "lock": "Lock",
+      "showTheme": "Show",
+      "hideTheme": "Hide"
     },
     "toasts": {
-      "premiumRequired": "Premium license required",
-      "premiumRequiredDescription": "Unlock premium themes by adding a valid premium license."
+      "premiumRequired": "License required",
+      "premiumRequiredDescription": "Add a valid license to unlock all themes."
     },
     "license": {
       "errors": {
@@ -496,9 +496,9 @@
     "custom": {
       "badge": "Custom",
       "title": "Custom Themes",
-      "lockedTitle": "Custom themes are a premium feature",
-      "lockedDescription": "Unlock premium to sideload your own theme CSS files from a directory on disk.",
-      "unlockCta": "Unlock premium",
+      "lockedTitle": "Custom themes need a license",
+      "lockedDescription": "Get a license to sideload your own theme CSS files from a directory on disk.",
+      "unlockCta": "Get a license",
       "refresh": "Refresh",
       "detectedCount": "Themes found: {{total}}",
       "parseErrorsTitle": "Could not parse these files:",

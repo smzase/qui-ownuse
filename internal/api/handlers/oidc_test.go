@@ -4,19 +4,30 @@
 package handlers
 
 import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
+	"maps"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/alexedwards/scs/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/autobrr/qui/internal/auth"
 	"github.com/autobrr/qui/internal/domain"
+	"github.com/autobrr/qui/internal/models"
+	"github.com/autobrr/qui/internal/testutil/testdb"
 )
 
 type discoveryDocument struct {
@@ -28,31 +39,114 @@ type discoveryDocument struct {
 	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported,omitempty"`
 }
 
+// fakeOIDCProvider serves discovery, a JWKS, a token endpoint that returns a
+// signed ID token, and a user-info endpoint.
+type fakeOIDCProvider struct {
+	codeChallenges []string
+	// idClaims are added to every ID token, overriding the defaults.
+	idClaims   map[string]any
+	identities map[string]map[string]any
+	// userInfo is the user-info response; nil makes the endpoint fail.
+	userInfo map[string]any
+}
+
+// fakeOIDCUserInfoError is the body of a failed user-info response. It must
+// stay in the log and never reach the browser.
+const fakeOIDCUserInfoError = "provider unavailable: internal.example.lan"
+
+var fakeOIDCKey = sync.OnceValue(func() *rsa.PrivateKey {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+	return key
+})
+
 func newOIDCDiscoveryServer(t *testing.T, codeChallenges []string) *httptest.Server {
-	var discovery *httptest.Server
-	discovery = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/openid-configuration" {
-			http.NotFound(w, r)
+	return startFakeOIDCProvider(t, &fakeOIDCProvider{codeChallenges: codeChallenges})
+}
+
+func startFakeOIDCProvider(t *testing.T, p *fakeOIDCProvider) *httptest.Server {
+	var srv *httptest.Server
+	writeJSON := func(w http.ResponseWriter, v any) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.MarshalWrite(w, v); err != nil {
+			t.Errorf("encode fake OIDC response: %v", err)
+		}
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, discoveryDocument{
+			Issuer:                        srv.URL,
+			AuthorizationEndpoint:         srv.URL + "/authorize",
+			TokenEndpoint:                 srv.URL + "/token",
+			UserInfoEndpoint:              srv.URL + "/userinfo",
+			JWKSURI:                       srv.URL + "/jwks",
+			CodeChallengeMethodsSupported: p.codeChallenges,
+		})
+	})
+	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
+		pub := fakeOIDCKey().PublicKey
+		writeJSON(w, map[string]any{"keys": []map[string]string{{
+			"kty": "RSA",
+			"alg": "RS256",
+			"use": "sig",
+			"kid": "test",
+			"n":   base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
+			"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
+		}}})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		claims := map[string]any{
+			"iss":                srv.URL,
+			"aud":                "client-id",
+			"sub":                "user-1",
+			"preferred_username": "alice",
+			"iat":                time.Now().Unix(),
+			"exp":                time.Now().Add(time.Minute).Unix(),
+		}
+		maps.Copy(claims, p.idClaims)
+		if p.identities != nil {
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("parse fake OIDC token request: %v", err)
+				http.Error(w, "invalid token request", http.StatusBadRequest)
+				return
+			}
+			maps.Copy(claims, p.identities[r.Form.Get("code")])
+		}
+		writeJSON(w, map[string]any{
+			"access_token": "access-token",
+			"token_type":   "Bearer",
+			"expires_in":   60,
+			"id_token":     signFakeIDToken(t, claims),
+		})
+	})
+	mux.HandleFunc("/userinfo", func(w http.ResponseWriter, _ *http.Request) {
+		if p.userInfo == nil {
+			http.Error(w, fakeOIDCUserInfoError, http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		doc := discoveryDocument{
-			Issuer:                discovery.URL,
-			AuthorizationEndpoint: discovery.URL + "/authorize",
-			TokenEndpoint:         discovery.URL + "/token",
-			UserInfoEndpoint:      discovery.URL + "/userinfo",
-			JWKSURI:               discovery.URL + "/jwks",
-		}
-		if codeChallenges != nil {
-			doc.CodeChallengeMethodsSupported = codeChallenges
-		}
-		if err := json.NewEncoder(w).Encode(doc); err != nil {
-			t.Errorf("encode OIDC discovery response: %v", err)
-			http.Error(w, "failed to encode discovery response", http.StatusInternalServerError)
-		}
-	}))
-	t.Cleanup(discovery.Close)
-	return discovery
+		writeJSON(w, p.userInfo)
+	})
+
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func signFakeIDToken(t *testing.T, claims map[string]any) string {
+	header, err := json.Marshal(map[string]string{"alg": "RS256", "typ": "JWT", "kid": "test"})
+	require.NoError(t, err)
+	payload, err := json.Marshal(claims)
+	require.NoError(t, err)
+
+	signingInput := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(payload)
+	digest := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, fakeOIDCKey(), crypto.SHA256, digest[:])
+	require.NoError(t, err)
+
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 
 func newTestOIDCHandler(t *testing.T, issuer string) *OIDCHandler {
@@ -72,6 +166,42 @@ func newTestOIDCHandler(t *testing.T, issuer string) *OIDCHandler {
 	require.NoError(t, err)
 
 	return handler
+}
+
+func TestOIDCCallbackPreservesSeparateForkUsers(t *testing.T) {
+	provider := startFakeOIDCProvider(t, &fakeOIDCProvider{identities: map[string]map[string]any{
+		"alice": {"sub": "subject-alice", "preferred_username": "alice"},
+		"bob":   {"sub": "subject-bob", "preferred_username": "bob"},
+	}})
+	handler := newTestOIDCHandler(t, provider.URL)
+	handler.authService = auth.NewService(testdb.NewMigratedSQLite(t, "oidc-multi-user"))
+	ids := make(map[string]int)
+	for _, username := range []string{"alice", "bob", "alice"} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/auth/oidc/callback?state=fixture-state&code="+username, nil)
+		ctx, err := handler.sessionManager.Load(req.Context(), "")
+		require.NoError(t, err)
+		handler.sessionManager.Put(ctx, "oidc_state", "fixture-state")
+		rec := httptest.NewRecorder()
+		handler.handleCallback(rec, req.WithContext(ctx))
+		require.Equal(t, http.StatusFound, rec.Code, rec.Body.String())
+		id := handler.sessionManager.GetInt(ctx, "user_id")
+		require.Positive(t, id)
+		require.Equal(t, username, handler.sessionManager.GetString(ctx, "username"))
+		if previous, ok := ids[username]; ok {
+			require.Equal(t, previous, id)
+		}
+		ids[username] = id
+	}
+	require.NotEqual(t, ids["alice"], ids["bob"])
+	users, err := handler.authService.ListUsers(t.Context())
+	require.NoError(t, err)
+	require.Len(t, users, 2)
+	alice, err := handler.authService.GetUser(t.Context(), ids["alice"])
+	require.NoError(t, err)
+	require.Equal(t, models.UserRoleAdmin, alice.Role)
+	bob, err := handler.authService.GetUser(t.Context(), ids["bob"])
+	require.NoError(t, err)
+	require.Equal(t, models.UserRoleUser, bob.Role)
 }
 
 func TestOIDCConfigDoesNotExposePKCEVerifier(t *testing.T) {

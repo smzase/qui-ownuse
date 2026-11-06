@@ -231,6 +231,8 @@ var expectedSchema = map[string][]columnSpec{
 		{Name: "created_at", Type: "TIMESTAMP"},
 		{Name: "last_used_at", Type: "TIMESTAMP"},
 		{Name: "user_id", Type: "INTEGER"},
+		{Name: "permissions", Type: "TEXT"},
+		{Name: "instance_ids", Type: "TEXT"},
 	},
 	"instances": {
 		{Name: "id", Type: "INTEGER", PrimaryKey: true},

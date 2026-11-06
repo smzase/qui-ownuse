@@ -622,7 +622,7 @@ export const createColumns = ({
       cell: ({ row }) => {
         return (
           <div className="overflow-hidden whitespace-nowrap text-sm">
-            {row.original.popularity.toFixed(2)}
+            {row.original.popularity?.toFixed(2) ?? "—"}
           </div>
         )
       },
@@ -1008,7 +1008,7 @@ export const createColumns = ({
       cell: ({ row }) => {
         return (
           <div className="overflow-hidden whitespace-nowrap text-sm">
-            {row.original.private ? t("tableColumns.yes") : t("tableColumns.no")}
+            {row.original.private === undefined ? "—" : row.original.private ? t("tableColumns.yes") : t("tableColumns.no")}
           </div>
         )
       },
